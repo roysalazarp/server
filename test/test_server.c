@@ -28,15 +28,8 @@ int main() {
     ark_server((uint16_t)8080);
     init_resources();
 
-    Memory *memory = reserve_memory(231701558 + KB(4));
-
-    char *request_buff = (char *)memory_in_use(memory);
-    void *p = request_buff;
-
-    size_t received = 0;
-
     while (1) {
-        ArkRequestResult result = ark_listen_and_serve(&request_handler, &received, request_buff, &p);
+        ArkRequestResult result = ark_listen_and_serve(&request_handler);
         
         if (result.error) {
             printf("error!\n");

@@ -36,7 +36,9 @@
         "string": "c",
         "system_error": "c",
         "typeinfo": "c",
-        "utility": "c"
+        "utility": "c",
+        "istream": "c",
+        "ostream": "c"
     },
     "C_Cpp.errorSquiggles": "enabled"
 }

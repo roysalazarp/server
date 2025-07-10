@@ -13,10 +13,13 @@
 #include "../memory/memory_internal.h"
 #include "../utils.h"
 
-#define MAX_REQUEST_SIZE KB(1)
+#define REQUEST_BUFFER_SIZE_INCREMENT KB(4)
+#define MAX_REQUEST_SIZE MB(300)
+#define REQUEST_POOL_SIZE KB(1) /** This could also be SOMAXCONN or determined by the framework user */
+
+#define HTTP_END_SEQUENCE 0x0A0D0A0D  /** "\r\n\r\n" in little-endian */
 
 #define BLOCK_EXECUTION -1 /* In the context of epoll this puts the process to sleep. */
-
 typedef struct {
     enum { SERVER_SOCKET, CLIENT_SOCKET } type;
     int fd;
@@ -24,10 +27,35 @@ typedef struct {
 
 int epoll_fd;
 int nfds;
-struct epoll_event events[SOMAXCONN];
+struct epoll_event events[REQUEST_POOL_SIZE];
 struct epoll_event event;
 
 Socket server_socket;
+
+typedef struct {
+    Socket socket; /** This should be the first in the struct */
+    u32 pool_idx;
+    u8 *buffer;
+    size_t buffer_size;
+    size_t received_bytes;
+} RawHTTPRequest;
+
+#define U32_BITS 32
+
+RawHTTPRequest request_pool[REQUEST_POOL_SIZE];
+u32 request_pool_availability_mask[REQUEST_POOL_SIZE / U32_BITS];
+
+#define MASK_INDEX(i)       ((i) / U32_BITS)
+#define BIT_POSITION(i)     ((i) % U32_BITS)
+
+#define IS_AVAILABLE(i)     ((request_pool_availability_mask[MASK_INDEX(i)] & (1U << BIT_POSITION(i))) == 0)
+#define SET_AVAILABLE(i)    (request_pool_availability_mask[MASK_INDEX(i)] &= ~(1U << BIT_POSITION(i)))
+#define SET_OCCUPIED(i)     (request_pool_availability_mask[MASK_INDEX(i)] |=  (1U << BIT_POSITION(i)))
+
+#define MAX2(a,b) ((a) > (b) ? (a) : (b))
+
+#define MIN2(a,b) ((a) < (b) ? (a) : (b))
+#define MIN3(a,b,c) (MIN2(a, MIN2(b,c)))
 
 struct sockaddr_in client_addr; /** Why is this needed ?? */
 
@@ -69,7 +97,7 @@ ArkError ark_server(uint16_t port) {
 
     ASSERT(bind(server_fd, (struct sockaddr *)&server_addr, sizeof(server_addr)) != -1);
 
-    ASSERT(listen(server_fd, SOMAXCONN) != -1);
+    ASSERT(listen(server_fd, REQUEST_POOL_SIZE) != -1);
 
     server_socket.fd = server_fd;
     server_socket.type = SERVER_SOCKET;
@@ -80,16 +108,38 @@ ArkError ark_server(uint16_t port) {
 
     printf("Server listening on port: %d...\n", (int)port);
 
+    u32 i;
+    for (i = 0; i < REQUEST_POOL_SIZE; i++) {
+        request_pool[i].pool_idx = i;
+    }
+
     return error;
 }
 
-#define LARGE_REQUEST_POOL 10 /** The framework user determines how many can send large requests simulaneously */
-void *arena_ptr_pool[LARGE_REQUEST_POOL]; /** Memory arenas for large request (ex. that contain file uploads) need to be accessible globally */
+int find_first_available_request_slot() {
+    int mask_index, bit_index;
 
-ArkRequestResult ark_listen_and_serve(ArkResponse func(const char[]), size_t *received, char *request_buff, void **p) {
+    for (mask_index = 0; mask_index < REQUEST_POOL_SIZE / U32_BITS; ++mask_index) {
+        u32 mask_entry = request_pool_availability_mask[mask_index];
+        
+        /** If all bits are set (0xFFFFFFFF), no free slots here; skip */
+        if (mask_entry != 0xFFFFFFFFU) {
+            for (bit_index = 0; bit_index < U32_BITS; ++bit_index) {
+                /** Check if bit is 0 (available) */
+                if ((mask_entry & (1U << bit_index)) == 0) {
+                    return mask_index * U32_BITS + bit_index;
+                }
+            }
+        }
+    }
+
+    return -1;
+}
+
+ArkRequestResult ark_listen_and_serve(ArkResponse func(const char[])) {
     ArkRequestResult result = {0};
 
-    nfds = epoll_wait(epoll_fd, events, SOMAXCONN, BLOCK_EXECUTION);
+    nfds = epoll_wait(epoll_fd, events, REQUEST_POOL_SIZE, BLOCK_EXECUTION);
 
     if (keep_running == false) {
         return result;
@@ -112,12 +162,17 @@ ArkRequestResult ark_listen_and_serve(ArkResponse func(const char[]), size_t *re
                     int client_fd_flags = fcntl(client_fd, F_GETFL, 0);
                     ASSERT(fcntl(client_fd, F_SETFL, client_fd_flags | O_NONBLOCK) != -1);
 
-                    Socket *client_socket_info = (Socket *)malloc(sizeof(Socket));
-                    client_socket_info->type = CLIENT_SOCKET;
-                    client_socket_info->fd = client_fd;
+                    int pos = find_first_available_request_slot();
+                    SET_OCCUPIED(pos);
+                    request_pool[pos].socket.type = CLIENT_SOCKET;
+                    request_pool[pos].socket.fd = client_fd;
+
+                    size_t buffer_size = REQUEST_BUFFER_SIZE_INCREMENT;
+                    request_pool[pos].buffer_size = buffer_size;
+                    request_pool[pos].buffer = malloc(buffer_size * sizeof(char));
 
                     event.events = EPOLLIN | EPOLLET;
-                    event.data.ptr = client_socket_info;
+                    event.data.ptr = &request_pool[pos].socket;
                     ASSERT(epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_fd, &event) != -1);
 
                     break;
@@ -131,6 +186,8 @@ ArkRequestResult ark_listen_and_serve(ArkResponse func(const char[]), size_t *re
 
             case CLIENT_SOCKET: {
                 if (events[i].events & EPOLLIN) { /** Data available for read in client socket buffer */
+                    RawHTTPRequest *request = (RawHTTPRequest *)socket_info;
+                    
                     int client_socket = socket_info->fd;
 
                     /** 
@@ -139,8 +196,6 @@ ArkRequestResult ark_listen_and_serve(ArkResponse func(const char[]), size_t *re
                      * are dealing with a file upload in which case we need to increase the size of the arena allocated
                      * to the size of the request message (start line, headers and body).
                      */
-                    char raw_request[MAX_REQUEST_SIZE];
-                    bzero(raw_request, MAX_REQUEST_SIZE);
 
                     /**
                      * It is important to call recv repeatedly until we receive EWOULDBLOCK,
@@ -152,6 +207,8 @@ ArkRequestResult ark_listen_and_serve(ArkResponse func(const char[]), size_t *re
                      * KEEP IN MIND: A large I/O operation on a single descriptor has the potential to 
                      * starve other descriptors. 
                      */
+                    
+                    /* HttpMessage msg = {0}; */
 
                     while (1) {
                         /**
@@ -161,7 +218,23 @@ ArkRequestResult ark_listen_and_serve(ArkResponse func(const char[]), size_t *re
                         * operation should be placed in a while loop, sending until EWOULDBLOCK is returned,
                         * and then resumed later to continue sending.
                         */
-                        ssize_t got = recv(client_socket, *p, 212992, 0);
+
+                        size_t remaining_allowed = MAX_REQUEST_SIZE - request->received_bytes;
+                        size_t max = MIN2(REQUEST_BUFFER_SIZE_INCREMENT, remaining_allowed);
+                        ssize_t got = recv(client_socket, &request->buffer[request->received_bytes], max, 0);
+                        
+                        if (got > 0) {
+                            request->received_bytes += (size_t)got;
+                            printf("%lu\n", request->received_bytes);
+                        }
+
+                        /** Increase request buffer size */
+                        /*
+                        if (request->received_bytes >= request->buffer_size) {
+                        }
+                        */
+                        request->buffer_size += REQUEST_BUFFER_SIZE_INCREMENT;
+                        request->buffer = realloc(request->buffer, request->buffer_size);
      
                         if (got <= 0) {
                             if (!got) {
@@ -181,35 +254,46 @@ ArkRequestResult ark_listen_and_serve(ArkResponse func(const char[]), size_t *re
                                 * nor should we prematurely process the HTTP request. Instead, we should store the partial data in a separate buffer,
                                 * continue accumulating incoming data, and only process the request once it has been fully received.
                                 */
+
+                                /** TODO: CHECK IF HTTP MESSAGE HAS BEEN FULLY RECEIVED WITH \r\n\r\n */
+
+                                /** Full HTTP headers received */
+                                /*
+                                uint32_t *end = (uint32_t *)(&request->buffer[request->received_bytes - 4]);
+                                if (*end == HTTP_END_SEQUENCE) {
+                                    break;
+                                }
+                                */
                             }
 
-                            if (*received >= (231701558+219)) {
+                            if (request->received_bytes >= (231701558+219)) {
                                 break;
                             } else {
                                 goto request_cleanup;
                             }
                         }
 
-                         *received += got;
-                         *p = (char *)*p + got;
+                        if (!(request->received_bytes <= MAX_REQUEST_SIZE)) {
+                            ASSERT(0);
+                        }
 
-                         /** 
-                          * HTTP request needs to be parsed at this point.
-                          * Memory arena size might need increasing depending on the request size, for example,
-                          * when a large file is uploaded we would need to check for the content length header
-                          * to see how big is the file and resize the arena accordingly.
-                          * 
-                          * The framework user might want to say whether they accept file uploads at all, or only
-                          * on certain endpoints or a limit size of the file upload. We can for example exit the 
-                          * request early if user is not allowed to upload file.
-                          */
+                        /** 
+                        * HTTP request needs to be parsed at this point.
+                        * Memory arena size might need increasing depending on the request size, for example,
+                        * when a large file is uploaded we would need to check for the content length header
+                        * to see how big is the file and resize the arena accordingly.
+                        * 
+                        * The framework user might want to say whether they accept file uploads at all, or only
+                        * on certain endpoints or a limit size of the file upload. We can for example exit the 
+                        * request early if user is not allowed to upload file.
+                        */
 
-                         if (*received >= (231701558+219)) {
+                        if (request->received_bytes >= (231701558+219)) {
                             break;
-                         }
+                        }
                     }
 
-                    printf("received %lu\n", *received);
+                    printf("received %lu\n", request->received_bytes);
 
                     char r[] =  "HTTP/1.1 200 OK\r\n"
                                 "Content-Type: text/html\r\n"
@@ -219,8 +303,11 @@ ArkRequestResult ark_listen_and_serve(ArkResponse func(const char[]), size_t *re
                                 "<html><body><h1>Hello, World!</h1></body></html>\n";
 
                     ArkResponse response = {0};
+
                     /* ark_begin_profile(); */
+                    /*
                     response = func(raw_request);
+                    */
                     /* ark_end_and_print_profile(); */
 
                     response.content = r;
@@ -238,7 +325,6 @@ ArkRequestResult ark_listen_and_serve(ArkResponse func(const char[]), size_t *re
                     }
 
                     close(client_socket);
-                    free(socket_info);
                    
                     request_cleanup:;
                     break;

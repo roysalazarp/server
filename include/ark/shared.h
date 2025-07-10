@@ -2,6 +2,9 @@
 #define SHARED_H
 
 #define KB(value) ((value) * 1024)
+#define MB(value) (KB(value) * 1024)
+#define GB(value) (MB(value) * 1024)
+
 #define PAGE_SIZE KB(4)
 
 #define NULL ((void *)0)
