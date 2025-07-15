@@ -16,7 +16,14 @@ typedef struct {
     int error;
 } ArkRequestResult;
 
-ArkError ark_server(uint16_t port);
-ArkRequestResult ark_listen_and_serve(ArkResponse func(const char[]));
+typedef struct {
+    char *raw;
+    size_t length;
+    int handle;
+} ArkRequest;
+
+ArkError ark_server_init(uint16_t port);
+ArkRequest ark_retrive_request();
+void ark_send_response(int handle, char *response, size_t response_length);
 
 #endif /* ARK__H */

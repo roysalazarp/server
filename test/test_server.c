@@ -1,10 +1,10 @@
 #include <stdio.h>
 #include <stdint.h>
+#include <string.h>
 
 #include "ark/shared.h"
 #include "ark/server.h"
 #include "ark/memory.h"
-#include "../src/utils.h"
 #include "../src/memory/memory_internal.h"
 
 Memory *persisting_memory;
@@ -23,17 +23,18 @@ void init_resources() {
 }
 
 int main() {
-    available_ram();
-
-    ark_server((uint16_t)8080);
+    ark_server_init((uint16_t)8080);
     init_resources();
 
     while (1) {
-        ArkRequestResult result = ark_listen_and_serve(&request_handler);
-        
-        if (result.error) {
-            printf("error!\n");
-        }
+        ArkRequest request = ark_retrive_request();
+        char response[] =   "HTTP/1.1 200 OK\r\n"
+                            "Content-Type: text/html\r\n"
+                            "Content-Length: 49\r\n"
+                            "Connection: close\r\n"
+                            "\r\n"
+                            "<html><body><h1>Hello, World!</h1></body></html>\n";
+        ark_send_response(request.handle, response, strlen(response));
     }
     
     return 0;

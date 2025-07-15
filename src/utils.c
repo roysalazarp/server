@@ -6,6 +6,7 @@
 #include "utils.h"
 
 void bzero(void *p, size_t n) { memset(p, 0, n); }
+int is_digit(int c) { return '0' <= c && c <= '9'; }
 
 unsigned long available_ram() {
     struct sysinfo info;

@@ -6,15 +6,21 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <ctype.h>
 
 #include "../../include/ark/shared.h"
 #include "../../include/ark/server.h"
-#include "../../include/ark/memory.h"
-#include "../memory/memory_internal.h"
 #include "../utils.h"
 
-#define REQUEST_BUFFER_SIZE_INCREMENT KB(4)
-#define MAX_REQUEST_SIZE MB(300)
+#define MASK_3        0xFFFFFF0000000000
+#define MASK_4        0xFFFFFFFF00000000
+#define MASK_5        0xFFFFFFFFFF000000
+#define MASK_6        0xFFFFFFFFFFFF0000
+#define MASK_7        0xFFFFFFFFFFFFFF00
+
+#define MAX_IO_READ KB(1)
+
+#define ARK_MAX_REQUEST_SIZE MB(300)
 #define REQUEST_POOL_SIZE KB(1) /** This could also be SOMAXCONN or determined by the framework user */
 
 #define HTTP_END_SEQUENCE 0x0A0D0A0D  /** "\r\n\r\n" in little-endian */
@@ -38,6 +44,7 @@ typedef struct {
     u8 *buffer;
     size_t buffer_size;
     size_t received_bytes;
+    boolean parsed;
 } RawHTTPRequest;
 
 #define U32_BITS 32
@@ -52,10 +59,7 @@ u32 request_pool_availability_mask[REQUEST_POOL_SIZE / U32_BITS];
 #define SET_AVAILABLE(i)    (request_pool_availability_mask[MASK_INDEX(i)] &= ~(1U << BIT_POSITION(i)))
 #define SET_OCCUPIED(i)     (request_pool_availability_mask[MASK_INDEX(i)] |=  (1U << BIT_POSITION(i)))
 
-#define MAX2(a,b) ((a) > (b) ? (a) : (b))
-
 #define MIN2(a,b) ((a) < (b) ? (a) : (b))
-#define MIN3(a,b,c) (MIN2(a, MIN2(b,c)))
 
 struct sockaddr_in client_addr; /** Why is this needed ?? */
 
@@ -68,7 +72,7 @@ void sigint_handler(int signo) {
     }
 }
 
-ArkError ark_server(uint16_t port) {
+ArkError ark_server_init(uint16_t port) {
     ArkError error = {0};
 
     /* Registers a signal handler to ensure the program exits gracefully */
@@ -136,24 +140,47 @@ int find_first_available_request_slot() {
     return -1;
 }
 
-ArkRequestResult ark_listen_and_serve(ArkResponse func(const char[])) {
-    ArkRequestResult result = {0};
+void ark_send_response(int handle, char *response, size_t response_length) {
+    printf("\n");
 
-    nfds = epoll_wait(epoll_fd, events, REQUEST_POOL_SIZE, BLOCK_EXECUTION);
+    if (send(request_pool[handle].socket.fd, response, response_length, 0) == -1) {}
+    close(request_pool[handle].socket.fd);
+}
+
+#define READ64LE(P)                    \
+  (__extension__({                     \
+    uint64_t __x;                      \
+    memcpy(&__x, P, 64 / 8);           \
+    __builtin_bswap32(__x);            \
+  }))
+
+#define READ64BE(P)                    \
+  (__extension__({                     \
+    uint64_t __x;                      \
+    memcpy(&__x, P, 64 / 8);           \
+    __builtin_bswap64(__x);            \
+  }))
+
+ArkRequest ark_retrive_request() {    
+    begining:;
+    
+    if (!nfds) {
+        nfds = epoll_wait(epoll_fd, events, REQUEST_POOL_SIZE, BLOCK_EXECUTION);
+    }
 
     if (keep_running == false) {
-        return result;
+        ASSERT(0);
     }
 
     ASSERT(nfds != -1);
-    
-    int i;
-    for (i = 0; i < nfds; i++) {
-        Socket *socket_info = (Socket *)events[i].data.ptr;
+
+    while (nfds) {
+        nfds--;
+        Socket *socket_info = (Socket *)events[nfds].data.ptr;
 
         switch (socket_info->type) {
             case SERVER_SOCKET: {
-                if (events[i].events & EPOLLIN) { /** Server received new client request */   
+                if (events[nfds].events & EPOLLIN) { /** Server received new client request */   
                     socklen_t client_addr_len = sizeof(client_addr);
 
                     int client_fd = accept(socket_info->fd, (struct sockaddr *)&client_addr, &client_addr_len);
@@ -167,9 +194,9 @@ ArkRequestResult ark_listen_and_serve(ArkResponse func(const char[])) {
                     request_pool[pos].socket.type = CLIENT_SOCKET;
                     request_pool[pos].socket.fd = client_fd;
 
-                    size_t buffer_size = REQUEST_BUFFER_SIZE_INCREMENT;
-                    request_pool[pos].buffer_size = buffer_size;
-                    request_pool[pos].buffer = malloc(buffer_size * sizeof(char));
+                    request_pool[pos].buffer_size = MAX_IO_READ;
+                    request_pool[pos].buffer = malloc(MAX_IO_READ * sizeof(char));
+                    bzero(request_pool[pos].buffer, MAX_IO_READ);
 
                     event.events = EPOLLIN | EPOLLET;
                     event.data.ptr = &request_pool[pos].socket;
@@ -185,58 +212,121 @@ ArkRequestResult ark_listen_and_serve(ArkResponse func(const char[])) {
             }
 
             case CLIENT_SOCKET: {
-                if (events[i].events & EPOLLIN) { /** Data available for read in client socket buffer */
+                if (events[nfds].events & EPOLLIN) { /** Data available for read in client socket buffer */
                     RawHTTPRequest *request = (RawHTTPRequest *)socket_info;
                     
                     int client_socket = socket_info->fd;
-
-                    /** 
-                     * LEFT OFF HERE
-                     * TODO, Use memory arena for request (alloc maybe 1KB) and if request is multipart/form-data we 
-                     * are dealing with a file upload in which case we need to increase the size of the arena allocated
-                     * to the size of the request message (start line, headers and body).
-                     */
-
-                    /**
-                     * It is important to call recv repeatedly until we receive EWOULDBLOCK,
-                     * effectively reading all available data in the buffer. This is because we want 
-                     * to ensure that we read all data available in the I/O buffer. When using edge-triggered
-                     * notifications, we will not receive another notification for data that was already
-                     * ready but not read, only for newly arriving data.
-                     * 
-                     * KEEP IN MIND: A large I/O operation on a single descriptor has the potential to 
-                     * starve other descriptors. 
-                     */
                     
-                    /* HttpMessage msg = {0}; */
-
-                    while (1) {
+                    while (true) {
                         /**
-                        * IMPORTANT!
-                        * It is implied that under no circumstances do I expect to receive requests from
-                        * the client that exceed MAX_REQUEST_SIZE. If that were the case, the send
-                        * operation should be placed in a while loop, sending until EWOULDBLOCK is returned,
-                        * and then resumed later to continue sending.
-                        */
+                         * It is important to call recv repeatedly until we receive EWOULDBLOCK,
+                         * effectively reading all available data in the buffer. This is because we want 
+                         * to ensure that we read all data available in the I/O buffer. When using edge-triggered
+                         * notifications, we will not receive another notification for data that was already
+                         * ready but not read, only for newly arriving data.
+                         * 
+                         * KEEP IN MIND, a large I/O operation on a single descriptor has the potential to 
+                         * starve other descriptors. 
+                         */
 
-                        size_t remaining_allowed = MAX_REQUEST_SIZE - request->received_bytes;
-                        size_t max = MIN2(REQUEST_BUFFER_SIZE_INCREMENT, remaining_allowed);
+                        size_t remaining_allowed = ARK_MAX_REQUEST_SIZE - request->received_bytes;
+                        
+                        size_t max = MIN2(MAX_IO_READ, remaining_allowed);
                         ssize_t got = recv(client_socket, &request->buffer[request->received_bytes], max, 0);
                         
-                        if (got > 0) {
-                            request->received_bytes += (size_t)got;
-                            printf("%lu\n", request->received_bytes);
+                        if (!request->parsed) {
+                            boolean has_content_length = false;
+                            u64 content_length = 0;
+                            size_t cursor = 0;
+                            while (*((uint32_t *)(&request->buffer[cursor])) != 0x0A0D0A0D) { /** Check for "\r\n\r\n" s*/
+                                if (memcmp(&request->buffer[cursor], "Content-Length", strlen("Content-Length")) == 0) { /** Check for Content-Length */
+                                    char *p = (char *)&request->buffer[cursor];
+                                    cursor += strlen("Content-Length");
+
+                                    has_content_length = true;
+
+                                    while (request->buffer[cursor] == ' ' || request->buffer[cursor] == ':') {
+                                        cursor++;
+                                    }
+
+                                    printf("\n");
+
+                                    while (!isspace(request->buffer[cursor])) {
+                                        if (!is_digit((unsigned char)request->buffer[cursor])) {
+                                            ASSERT(0);
+                                        }
+
+                                        content_length = content_length * 10 + (request->buffer[cursor] - '0');
+
+                                        /** Prevent overflow — 56-bit max value as a safety ceiling */
+                                        if (content_length > 0x000000ffffffffffLL) {
+                                            ASSERT(0);
+                                        }
+
+                                        cursor++;
+                                    }
+
+                                    printf("\n");
+                                } else {
+                                    cursor++;
+                                }
+                            }
+
+                            cursor += strlen("\r\n\r\n");
+
+                            request->parsed = true;
+
+                            /** LEFT OFF HEHE */
+                            /** At this point we know the length of the headers and we know the Content-Length if there is one */
+                            
+                            printf("\n");
+                            
+                            if (((READ64BE(request->buffer) & MASK_3) == READ64BE("GET\0\0\0\0")) ||
+                                ((READ64BE(request->buffer) & MASK_4) == READ64LE("HEAD\0\0\0"))  ||
+                                ((READ64BE(request->buffer) & MASK_5) == READ64LE("TRACE\0\0"))   ||
+                                ((READ64BE(request->buffer) & MASK_7) == READ64LE("CONNECT")))
+                            {
+                                /** Check for "\r\n\r\n", there CAN NOT be Content-Length header */
+                                if (has_content_length) {
+                                    ASSERT(0);
+                                }
+                            } else if (((READ64BE(request->buffer) & MASK_3) ==  READ64BE("PUT\0\0\0\0")) ||
+                                       ((READ64BE(request->buffer) & MASK_4) ==  READ64BE("POST\0\0\0"))  ||
+                                       ((READ64BE(request->buffer) & MASK_5) ==  READ64BE("PATCH\0\0")))
+                            {
+                                /** There MUST be a Content-Length header */
+                                if (!has_content_length) {
+                                    ASSERT(0);
+                                }
+                            } else if (((READ64BE(request->buffer) & MASK_6) ==  READ64BE("DELETE\0")) ||
+                                       ((READ64BE(request->buffer) & MASK_7) ==  READ64BE("OPTIONS")))
+                            {
+                                printf("\n");
+                                /** There MAY be a Content-Length header */
+                            }
+
+                            size_t presice_request_size = cursor + content_length;
+                            if (presice_request_size != request->buffer_size) {
+                                request->buffer_size = presice_request_size;
+                                request->buffer = realloc(request->buffer, request->buffer_size);
+                                printf("reallocating: %lu\n", request->buffer_size);
+                            }
+
+                            printf("\n");
                         }
 
-                        /** Increase request buffer size */
-                        /*
-                        if (request->received_bytes >= request->buffer_size) {
-                        }
-                        */
-                        request->buffer_size += REQUEST_BUFFER_SIZE_INCREMENT;
-                        request->buffer = realloc(request->buffer, request->buffer_size);
-     
-                        if (got <= 0) {
+                        /** NOTE
+                         *  - When the same header is present multiple times in the http request we only consider the last one, the user should only send one header and separate the content with comas.
+                         *  - Standard and custom http headers should be register in the "perfect hash table".
+                         *  - POST, PUT and PATCH methods must have a Content-Length header, other http methods are not allowed to have a body.
+                         *  - Should I accept POST, PUT and PATCH methods without a Content-Length header but a Transfer-Encoding "chunked"?
+                         * 
+                         *  NOTE, All http request messages (start line + headers) end with "\r\n\r\n" and after that is the start of the body
+                         */
+                        if (got > 0) {
+                            request->received_bytes += (size_t)got;
+                            printf("received_bytes so far: %lu\n", request->received_bytes);
+                        } else {
                             if (!got) {
                                 printf("client disconnected\n");
                             } else if (errno == EAGAIN || errno == EWOULDBLOCK) { 
@@ -255,26 +345,12 @@ ArkRequestResult ark_listen_and_serve(ArkResponse func(const char[])) {
                                 * continue accumulating incoming data, and only process the request once it has been fully received.
                                 */
 
-                                /** TODO: CHECK IF HTTP MESSAGE HAS BEEN FULLY RECEIVED WITH \r\n\r\n */
-
                                 /** Full HTTP headers received */
-                                /*
-                                uint32_t *end = (uint32_t *)(&request->buffer[request->received_bytes - 4]);
-                                if (*end == HTTP_END_SEQUENCE) {
+                                if (request->received_bytes == request->buffer_size) {
+                                    printf("\n");
                                     break;
                                 }
-                                */
                             }
-
-                            if (request->received_bytes >= (231701558+219)) {
-                                break;
-                            } else {
-                                goto request_cleanup;
-                            }
-                        }
-
-                        if (!(request->received_bytes <= MAX_REQUEST_SIZE)) {
-                            ASSERT(0);
                         }
 
                         /** 
@@ -287,47 +363,13 @@ ArkRequestResult ark_listen_and_serve(ArkResponse func(const char[])) {
                         * on certain endpoints or a limit size of the file upload. We can for example exit the 
                         * request early if user is not allowed to upload file.
                         */
-
-                        if (request->received_bytes >= (231701558+219)) {
-                            break;
-                        }
                     }
 
                     printf("received %lu\n", request->received_bytes);
-
-                    char r[] =  "HTTP/1.1 200 OK\r\n"
-                                "Content-Type: text/html\r\n"
-                                "Content-Length: 49\r\n"
-                                "Connection: close\r\n"
-                                "\r\n"
-                                "<html><body><h1>Hello, World!</h1></body></html>\n";
-
-                    ArkResponse response = {0};
-
-                    /* ark_begin_profile(); */
-                    /*
-                    response = func(raw_request);
-                    */
-                    /* ark_end_and_print_profile(); */
-
-                    response.content = r;
-                    response.length = strlen(r);
-
-                    /**
-                     * IMPORTANT!
-                     * It is implied that under no circumstances do I want to send an amount of
-                     * data that exceeds the write buffer capacity. If that were the case, the send
-                     * operation should be placed in a while loop, sending until EWOULDBLOCK is returned,
-                     * and then resumed later to continue sending.
-                     */
-                    if (send(client_socket, response.content, response.length, 0) == -1) {
-                        /* TODO */
-                    }
-
-                    close(client_socket);
-                   
-                    request_cleanup:;
-                    break;
+                                                           
+                    ArkRequest rout = {0};
+                    rout.handle = request->pool_idx;
+                    return rout;
                 }
 
                 printf("Client socket only should receive EPOLLIN events\n");
@@ -344,5 +386,5 @@ ArkRequestResult ark_listen_and_serve(ArkResponse func(const char[])) {
         }
     }
 
-    return result;
+    goto begining;
 }
