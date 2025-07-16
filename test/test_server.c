@@ -4,37 +4,22 @@
 
 #include "ark/shared.h"
 #include "ark/server.h"
-#include "ark/memory.h"
-#include "../src/memory/memory_internal.h"
 
-Memory *persisting_memory;
-
-ArkResponse request_handler(const char *raw_request) {
-    ArkResponse rendered_response = {0};
-    /** Framework user needs to allocate their own request memory arena, they know how much they need for each route */
-    Memory *request_memory = reserve_memory(PAGE_SIZE * 200);
-
-    /* here I can use persisting_memory */
-    return rendered_response;
-}
-
-void init_resources() {
-    persisting_memory = reserve_memory(PAGE_SIZE * 200);
-}
+#define ARK_MAX_HTTP_REQUEST_SIZE MB(300)
+#define ARK_MAX_QUEUED_HTTP_REQUESTS 500
 
 int main() {
     ark_server_init((uint16_t)8080);
-    init_resources();
 
     while (1) {
         ArkRequest new_request = ark_retrive_request();
 
-        char response[] =   "HTTP/1.1 200 OK\r\n"
-                            "Content-Type: text/html\r\n"
-                            "Content-Length: 49\r\n"
-                            "Connection: close\r\n"
-                            "\r\n"
-                            "<html><body><h1>Hello, World!</h1></body></html>\n";
+        char response[] = "HTTP/1.1 200 OK\r\n"
+                          "Content-Type: text/html\r\n"
+                          "Content-Length: 49\r\n"
+                          "Connection: close\r\n"
+                          "\r\n"
+                          "<html><body><h1>Hello, World!</h1></body></html>\n";
 
         ArkFetchTaskDetails tasks[2] = {0};
 

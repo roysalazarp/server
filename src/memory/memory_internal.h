@@ -1,5 +1,5 @@
-#ifndef MEMORY_H
-#define MEMORY_H
+#ifndef MEMORY_INTERNAL_H
+#define MEMORY_INTERNAL_H
 
 #include <stdio.h>
 #include "../../include/ark/memory.h"
@@ -12,4 +12,4 @@ Memory *memory_setup(void *raw_memory, size_t size);
 void *memory_in_use(Memory *memory);
 void memory_out_of_use(Memory *memory, void *tmp);
 
-#endif /* MEMORY_H */
+#endif /* MEMORY_INTERNAL_H */

@@ -41,7 +41,7 @@ typedef struct {
     int count;
 } FetchResponse;
 
-ArkError ark_server_init(uint16_t port);
+int ark_server_init(uint16_t port);
 ArkRequest ark_retrive_request();
 FetchResponse ark_fetch(int handle, ArkFetchTaskDetails *tasks, int count);
 void ark_send_response(int handle, char *response, size_t response_length);

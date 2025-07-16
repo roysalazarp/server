@@ -42,7 +42,8 @@
         "netdb.h": "c",
         "socket.h": "c",
         "features.h": "c",
-        "struct_osockaddr.h": "c"
+        "struct_osockaddr.h": "c",
+        "types.h": "c"
     },
     "C_Cpp.errorSquiggles": "enabled"
 }
