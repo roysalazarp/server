@@ -22,8 +22,28 @@ typedef struct {
     int handle;
 } ArkRequest;
 
+typedef struct {
+    char *domain_name;
+    size_t domain_name_length;
+    char *request;
+    size_t request_length;
+} ArkFetchTaskDetails;
+
+typedef struct {
+    u8 *buffer;
+    size_t buffer_size;
+    size_t received_bytes;
+    boolean headers_checked;
+} RawHTTPMessage;
+
+typedef struct {
+    RawHTTPMessage *responses;
+    int count;
+} FetchResponse;
+
 ArkError ark_server_init(uint16_t port);
 ArkRequest ark_retrive_request();
+FetchResponse ark_fetch(int handle, ArkFetchTaskDetails *tasks, int count);
 void ark_send_response(int handle, char *response, size_t response_length);
 
 #endif /* ARK__H */

@@ -38,7 +38,11 @@
         "typeinfo": "c",
         "utility": "c",
         "istream": "c",
-        "ostream": "c"
+        "ostream": "c",
+        "netdb.h": "c",
+        "socket.h": "c",
+        "features.h": "c",
+        "struct_osockaddr.h": "c"
     },
     "C_Cpp.errorSquiggles": "enabled"
 }
