@@ -1,5 +1,6 @@
 #include <string.h>
 #include <sys/mman.h>
+
 #include "memory_internal.h"
 #include "../../include/ark/memory.h"
 
@@ -28,10 +29,10 @@ Memory *memory_setup(void *raw_memory, size_t size) {
 }
 
 void *memory_alloc(Memory *memory, size_t size) {
-    ASSERT(!memory->in_use); /** Cannot allocate while the memory is in use! */
+    assert(!memory->in_use); /** Cannot allocate while the memory is in use! */
 
     if ((u8 *)memory->current + size > (u8 *)memory->start + memory->size) {
-        ASSERT(0); /** Out of memory! */
+        assert(0); /** Out of memory! */
     }
 
     void *ptr = memory->current;
@@ -42,7 +43,7 @@ void *memory_alloc(Memory *memory, size_t size) {
 }
 
 void *memory_in_use(Memory *memory) {
-    ASSERT(!memory->in_use); /** Memory is already in use! */
+    assert(!memory->in_use); /** Memory is already in use! */
     memory->in_use = true;
 
     return memory->current;

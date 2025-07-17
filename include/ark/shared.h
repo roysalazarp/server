@@ -29,7 +29,7 @@ typedef u8 boolean;
 #define false 0
 
 #ifdef DEBUG
-#define ASSERT(condition) \
+#define assert(condition) \
     do { \
         if (!(condition)) { \
             volatile int* crash = (void*)0; \
@@ -37,7 +37,7 @@ typedef u8 boolean;
         } \
     } while(0)
 #else
-#define ASSERT(condition)
+#define assert(condition)
 #endif
 
 #endif /* SHARED_H */

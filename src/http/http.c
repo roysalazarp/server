@@ -51,7 +51,7 @@ int ark_parse_http_request_message(ARKHttpMessage *http_msg, char *raw_http_msg,
     int c = 0; /** ASCII character */
 
     if (raw_http_msg_length > chunck_to_process_length) {
-        ASSERT(0);
+        assert(0);
         return -1;
     }
     
@@ -67,7 +67,7 @@ int ark_parse_http_request_message(ARKHttpMessage *http_msg, char *raw_http_msg,
                     break; /* RFC7230 § 3.5 */
                 }
                 if (!http_token[c]) {
-                    ASSERT(0);
+                    assert(0);
                     return -1;
                 }
                 http_msg->token = HttpStateMethod;
@@ -82,7 +82,7 @@ int ark_parse_http_request_message(ARKHttpMessage *http_msg, char *raw_http_msg,
                         http_msg->token = HttpStateUri;
                         break;
                     } else if (http_msg->a == 64 || !http_token[c]) {
-                        ASSERT(0);
+                        assert(0);
                         return -1;
                     }
                     http_msg->method |= (uint64_t)c << http_msg->a;
@@ -98,7 +98,7 @@ int ark_parse_http_request_message(ARKHttpMessage *http_msg, char *raw_http_msg,
                 for (;;) {
                     if (c == ' ' || c == '\r' || c == '\n') {
                         if (http_msg->cursor == http_msg->a) {
-                            ASSERT(0);
+                            assert(0);
                             return -1;
                         }
                         http_msg->uri.start_offset = http_msg->a;
@@ -113,7 +113,7 @@ int ark_parse_http_request_message(ARKHttpMessage *http_msg, char *raw_http_msg,
                         }
                         break;
                     } else if (c < 0x20 || (0x7F <= c && c < 0xA0)) {
-                        ASSERT(0);
+                        assert(0);
                         return -1;
                     }
                     if (++http_msg->cursor == raw_http_msg_length) {
@@ -129,7 +129,7 @@ int ark_parse_http_request_message(ARKHttpMessage *http_msg, char *raw_http_msg,
                         http_msg->version = (raw_http_msg[http_msg->a + 5] - '0') * 10 + (raw_http_msg[http_msg->a + 7] - '0');
                         http_msg->token = c == '\r' ? HttpStateCr : HttpStateLf1;
                     } else {
-                        ASSERT(0);
+                        assert(0);
                         return -1;
                     }
                 }
@@ -139,7 +139,7 @@ int ark_parse_http_request_message(ARKHttpMessage *http_msg, char *raw_http_msg,
                 for (;;) {
                     if (c == ' ' || c == '\r' || c == '\n') {
                         if (http_msg->status < 100) {
-                            ASSERT(0);
+                            assert(0);
                             return -1;
                         }
                         if (c == ' ') {
@@ -153,11 +153,11 @@ int ark_parse_http_request_message(ARKHttpMessage *http_msg, char *raw_http_msg,
                         http_msg->status *= 10;
                         http_msg->status += c - '0';
                         if (http_msg->status > 999) {
-                            ASSERT(0);
+                            assert(0);
                             return -1;
                         }
                     } else {
-                        ASSERT(0);
+                        assert(0);
                         return -1;
                     }
                     if (++http_msg->cursor == raw_http_msg_length) {
@@ -175,7 +175,7 @@ int ark_parse_http_request_message(ARKHttpMessage *http_msg, char *raw_http_msg,
                         http_msg->token = c == '\r' ? HttpStateCr : HttpStateLf1;
                         break;
                     } else if (c < 0x20 || (0x7F <= c && c < 0xA0)) {
-                        ASSERT(0);
+                        assert(0);
                         return -1;
                     }
                     if (++http_msg->cursor == raw_http_msg_length) {
@@ -187,7 +187,7 @@ int ark_parse_http_request_message(ARKHttpMessage *http_msg, char *raw_http_msg,
             }
             case HttpStateCr: {
                 if (c != '\n') {
-                    ASSERT(0);
+                    assert(0);
                     return -1;
                 }
                 http_msg->token = HttpStateLf1;
@@ -202,7 +202,7 @@ int ark_parse_http_request_message(ARKHttpMessage *http_msg, char *raw_http_msg,
                 } else if (!http_token[c]) {
                     /* 1. Forbid empty header name (RFC2616 §2.2) */
                     /* 2. Forbid line folding (RFC7230 §3.2.4) */
-                    ASSERT(0);
+                    assert(0);
                     return -1;
                 }
                 http_msg->tmp_key.start_offset = http_msg->cursor;
@@ -216,7 +216,7 @@ int ark_parse_http_request_message(ARKHttpMessage *http_msg, char *raw_http_msg,
                         http_msg->token = HttpStateColon;
                         break;
                     } else if (!http_token[c]) {
-                        ASSERT(0);
+                        assert(0);
                         return -1;
                     }
                     if (++http_msg->cursor == raw_http_msg_length) {
@@ -245,13 +245,13 @@ int ark_parse_http_request_message(ARKHttpMessage *http_msg, char *raw_http_msg,
                             http_msg->headers[http_header].start_offset = http_msg->a;
                             http_msg->headers[http_header].end_offset = i;
                         } else {
-                            ASSERT(0);
+                            assert(0);
                             return -1;
                         }
                         http_msg->token = c == '\r' ? HttpStateCr : HttpStateLf1;
                         break;
                     } else if ((c < 0x20 && c != '\t') || (0x7F <= c && c < 0xA0)) {
-                        ASSERT(0);
+                        assert(0);
                         return -1;
                     }
                     if (++http_msg->cursor == raw_http_msg_length)
@@ -265,7 +265,7 @@ int ark_parse_http_request_message(ARKHttpMessage *http_msg, char *raw_http_msg,
                     http_msg->parsed = true;
                     return ++http_msg->cursor;
                 }
-                ASSERT(0);
+                assert(0);
                 return -1;
             }
             default: {
@@ -276,6 +276,6 @@ int ark_parse_http_request_message(ARKHttpMessage *http_msg, char *raw_http_msg,
     if (http_msg->cursor < chunck_to_process_length) {
         return 0;
     }
-    ASSERT(0);
+    assert(0);
     return -1;
 }

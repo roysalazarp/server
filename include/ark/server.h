@@ -3,6 +3,8 @@
 
 #include <stdio.h>
 
+#define ARK_SHUT_SERVER_SIGNAL 2
+
 typedef struct {
     size_t length;
     char *content;
@@ -39,11 +41,11 @@ typedef struct {
 typedef struct {
     RawHTTPMessage *responses;
     int count;
-} FetchResponse;
+} ArkFetchResponse;
 
 int ark_server_init(uint16_t port);
-ArkRequest ark_retrive_request();
-FetchResponse ark_fetch(int handle, ArkFetchTaskDetails *tasks, int count);
-void ark_send_response(int handle, char *response, size_t response_length);
+int ark_retrive_request(ArkRequest *ark_request);
+int ark_fetch(ArkFetchResponse *response, int handle, ArkFetchTaskDetails *tasks, int count);
+int ark_send_response(int handle, char *response, size_t response_length);
 
 #endif /* ARK__H */
