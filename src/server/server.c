@@ -29,6 +29,11 @@
  * when making an API call to a third-party service and the service is down. These errors
  * should be handled in whatever way makes the most sense to inform the library user and
  * gracefully handle the situation.
+ * 
+ * When functions return an int:
+ * -1 for Technical error
+ *  0 success
+ * >0 error code
  */
 
 #ifndef ARK_MAX_HTTP_REQUEST_SIZE
@@ -172,8 +177,6 @@ int ark_server_init(uint16_t port) {
 }
 
 int ark_send_response(int handle, char *response, size_t response_length) {
-    printf("\n");
-
     if (send(request_pool_ptrs[handle]->socket_info.fd, response, response_length, 0) == -1) {}
     close(request_pool_ptrs[handle]->socket_info.fd);
 
@@ -191,11 +194,6 @@ int ark_send_response(int handle, char *response, size_t response_length) {
     return 0;
 }
 
-/** 
- * -1 for Technical error
- *  0 success
- * >0 error code
- */
 int ark_fetch(ArkFetchResponse *response, int handle, ArkFetchTaskDetails *tasks, int count) {    
     int _;
     request_pool_ptrs[handle]->fetch.responses = malloc(count * sizeof(RawHTTPMessage));
@@ -207,7 +205,7 @@ int ark_fetch(ArkFetchResponse *response, int handle, ArkFetchTaskDetails *tasks
         request_pool_ptrs[handle]->fetch.responses[i].buffer = malloc(MAX_BYTES_TO_READ_FROM_SOCKET_BUFFER_AT_ONCE * sizeof(char));
         bzero(request_pool_ptrs[handle]->fetch.responses[i].buffer, MAX_BYTES_TO_READ_FROM_SOCKET_BUFFER_AT_ONCE);
     }
-        
+
     int st = setjmp(request_pool_ptrs[handle]->fetch.resumable_ctx);
     if (st == 0) {
         int i = 0;
@@ -256,14 +254,10 @@ int ark_fetch(ArkFetchResponse *response, int handle, ArkFetchTaskDetails *tasks
             if (send(sock_fd, task.request, task.request_length, 0) == -1) {}
 
             request_pool_ptrs[handle]->fetch.number_of_requests_sent++;
-
-            printf("\n");
         }
 
         longjmp(event_loop, 1); /** return to event loop */
     }
-
-    printf("\n");
 
     response->count = request_pool_ptrs[st]->fetch.number_of_responses_received;
     response->responses = request_pool_ptrs[st]->fetch.responses;
@@ -376,8 +370,6 @@ int ark_retrive_request(ArkRequest *ark_request) {
                                         request_cursor++;
                                     }
 
-                                    printf("\n");
-
                                     while (!isspace(ctx->client_request.buffer[request_cursor])) {
                                         if (!is_digit((unsigned char)ctx->client_request.buffer[request_cursor])) {
                                             assert(0);
@@ -392,8 +384,6 @@ int ark_retrive_request(ArkRequest *ark_request) {
 
                                         request_cursor++;
                                     }
-
-                                    printf("\n");
                                 } else {
                                     request_cursor++;
                                 }
@@ -404,8 +394,6 @@ int ark_retrive_request(ArkRequest *ark_request) {
                             ctx->client_request.headers_checked = true;
 
                             /** At this point we know the length of the headers and we know the Content-Length if there is one */
-                            
-                            printf("\n");
                             
                             if (((READ64BE(ctx->client_request.buffer) & MASK_3) == READ64BE("GET\0\0\0\0")) ||
                                 ((READ64BE(ctx->client_request.buffer) & MASK_4) == READ64LE("HEAD\0\0\0"))  ||
@@ -427,7 +415,6 @@ int ark_retrive_request(ArkRequest *ark_request) {
                             } else if (((READ64BE(ctx->client_request.buffer) & MASK_6) ==  READ64BE("DELETE\0")) ||
                                        ((READ64BE(ctx->client_request.buffer) & MASK_7) ==  READ64BE("OPTIONS")))
                             {
-                                printf("\n");
                                 /** There MAY be a Content-Length header */
                             }
 
@@ -437,8 +424,6 @@ int ark_retrive_request(ArkRequest *ark_request) {
                                 ctx->client_request.buffer = realloc(ctx->client_request.buffer, ctx->client_request.buffer_size);
                                 printf("reallocating: %lu\n", ctx->client_request.buffer_size);
                             }
-
-                            printf("\n");
                         }
 
                         /** NOTE
@@ -454,9 +439,9 @@ int ark_retrive_request(ArkRequest *ark_request) {
                             printf("received_bytes so far: %lu\n", ctx->client_request.received_bytes);
                         } else {
                             if (!got) {
-                                printf("+-+-client disconnected\n");
+                                printf("Client disconnected\n");
                             } else if (errno == EAGAIN || errno == EWOULDBLOCK) { 
-                                printf("recv error: %s\n", strerror(errno));
+                                perror(NULL);
                                 /**
                                 * NOTE
                                 * When handling large requests that don't fit entirely in the I/O buffer (e.g., when a user uploads a large file),
@@ -474,7 +459,6 @@ int ark_retrive_request(ArkRequest *ark_request) {
                             
                             /** Full HTTP headers received */
                             if (ctx->client_request.received_bytes == ctx->client_request.buffer_size) {
-                                printf("\n");
                                 break;
                             }
                         }
@@ -499,7 +483,6 @@ int ark_retrive_request(ArkRequest *ark_request) {
                     
                     return 0;
                 }
-
 
                 printf("%s\n", "Client socket only should receive EPOLLIN events\n");
                 assert(0);
@@ -538,8 +521,6 @@ int ark_retrive_request(ArkRequest *ark_request) {
                                     cursor++;
                                 }
 
-                                printf("\n");
-
                                 while (!isspace(response->buffer[cursor])) {
                                     if (!is_digit((unsigned char)response->buffer[cursor])) {
                                         assert(0);
@@ -554,8 +535,6 @@ int ark_retrive_request(ArkRequest *ark_request) {
 
                                     cursor++;
                                 }
-
-                                printf("\n");
                             } else {
                                 cursor++;
                             }
@@ -571,8 +550,6 @@ int ark_retrive_request(ArkRequest *ark_request) {
                             response->buffer = realloc(response->buffer, response->buffer_size);
                             printf("reallocating: %lu\n", response->buffer_size);
                         }
-
-                        printf("\n");
                     }
 
                     if (got > 0) {
@@ -580,21 +557,16 @@ int ark_retrive_request(ArkRequest *ark_request) {
                         printf("received_bytes so far: %lu\n", response->received_bytes);
                     } else {
                         if (!got) {
-                            printf("*/*/client disconnected\n");
-
-                            /*
-                            break;
-                            */
+                            printf("client disconnected\n");
                         } else if (errno == EAGAIN || errno == EWOULDBLOCK) { 
                             printf("recv error: %s\n", strerror(errno));
                         }
                         
                         if (got == -1 && errno != EAGAIN && errno != EWOULDBLOCK) {
-                            printf("recv error: %s\n", strerror(errno));
+                            perror(NULL);
                         }
                         
                         if (response->received_bytes == response->buffer_size) {
-                            printf("\n");
                             request->fetch.number_of_responses_received++;
 
                             assert(epoll_ctl(epoll_fd, EPOLL_CTL_DEL, sock_fd, NULL) != -1);
@@ -609,8 +581,6 @@ int ark_retrive_request(ArkRequest *ark_request) {
                 if (request->fetch.number_of_responses_received == request->fetch.number_of_requests_sent) {
                     longjmp(request_pool_ptrs[j]->fetch.resumable_ctx, j);
                 }
-                
-                printf("\n");
                 
                 break;
             }
