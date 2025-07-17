@@ -99,7 +99,7 @@ typedef struct {
 
 #define U32_BITS 32
 
-HTTPRequestContext request_pool[ARK_MAX_QUEUED_HTTP_REQUESTS];
+HTTPRequestContext *request_pool_ptrs[ARK_MAX_QUEUED_HTTP_REQUESTS];
 u32 request_pool_availability_mask[ARK_MAX_QUEUED_HTTP_REQUESTS / U32_BITS];
 
 #define MASK_INDEX(i)       ((i) / U32_BITS)
@@ -118,8 +118,6 @@ SocketInfo server_socket;
 
 jmp_buf event_loop; /** Used to jump the program execution back to the
                         epoll event loop after making a fetch request */
-
-struct sockaddr_in client_addr; /** NOTE: Why is this needed ?? */
 
 volatile sig_atomic_t keep_running = true;
 
@@ -175,11 +173,6 @@ int ark_server_init(uint16_t port) {
 
     printf("Server listening on port: %d...\n", (int)port);
 
-    u32 i;
-    for (i = 0; i < ARK_MAX_QUEUED_HTTP_REQUESTS; i++) {
-        request_pool[i].pool_pos = i;
-    }
-
     return 0;
 }
 
@@ -188,42 +181,20 @@ int ark_server_init(uint16_t port) {
  * also remember to get rid of malloc as much as possible!
  */
 
-int find_first_available_request_slot() {
-    int mask_index, bit_index;
-
-    for (mask_index = 0; mask_index < ARK_MAX_QUEUED_HTTP_REQUESTS / U32_BITS; ++mask_index) {
-        u32 mask_entry = request_pool_availability_mask[mask_index];
-        
-        /** If all bits are set (0xFFFFFFFF), no free slots here; skip */
-        if (mask_entry != 0xFFFFFFFFU) {
-            for (bit_index = 0; bit_index < U32_BITS; ++bit_index) {
-                /** Check if bit is 0 (available) */
-                if ((mask_entry & (1U << bit_index)) == 0) {
-                    return mask_index * U32_BITS + bit_index;
-                }
-            }
-        }
-    }
-
-    return -1;
-}
-
 int ark_send_response(int handle, char *response, size_t response_length) {
     printf("\n");
 
-    if (send(request_pool[handle].socket_info.fd, response, response_length, 0) == -1) {}
-    close(request_pool[handle].socket_info.fd);
+    if (send(request_pool_ptrs[handle]->socket_info.fd, response, response_length, 0) == -1) {}
+    close(request_pool_ptrs[handle]->socket_info.fd);
 
-    free(request_pool[handle].client_request.buffer);
+    free(request_pool_ptrs[handle]->client_request.buffer);
     int i = 0;
-    for (i = 0; i < request_pool[handle].fetch.number_of_responses_received; i++) {
-        free(request_pool[handle].fetch.responses[i].buffer);
+    for (i = 0; i < request_pool_ptrs[handle]->fetch.number_of_responses_received; i++) {
+        free(request_pool_ptrs[handle]->fetch.responses[i].buffer);
     }
     
-    /** Clear everything except the pool_pos */
-    int pool_pos = request_pool[handle].pool_pos;
-    bzero(&request_pool[handle], sizeof(HTTPRequestContext));
-    request_pool[handle].pool_pos = pool_pos;
+    free(request_pool_ptrs[handle]);
+    request_pool_ptrs[handle] = NULL;
     
     SET_POOL_SLOT_AS_AVAILABLE(handle);
 
@@ -237,17 +208,17 @@ int ark_send_response(int handle, char *response, size_t response_length) {
  */
 int ark_fetch(ArkFetchResponse *response, int handle, ArkFetchTaskDetails *tasks, int count) {    
     int _;
-    request_pool[handle].fetch.responses = malloc(count * sizeof(RawHTTPMessage));
+    request_pool_ptrs[handle]->fetch.responses = malloc(count * sizeof(RawHTTPMessage));
 
     int i = 0;
     for (i = 0; i < count; i++) {
-        bzero(&request_pool[handle].fetch.responses[i], sizeof(RawHTTPMessage));
-        request_pool[handle].fetch.responses[i].buffer_size = MAX_BYTES_TO_READ_FROM_SOCKET_BUFFER_AT_ONCE;
-        request_pool[handle].fetch.responses[i].buffer = malloc(MAX_BYTES_TO_READ_FROM_SOCKET_BUFFER_AT_ONCE * sizeof(char));
-        bzero(request_pool[handle].fetch.responses[i].buffer, MAX_BYTES_TO_READ_FROM_SOCKET_BUFFER_AT_ONCE);
+        bzero(&request_pool_ptrs[handle]->fetch.responses[i], sizeof(RawHTTPMessage));
+        request_pool_ptrs[handle]->fetch.responses[i].buffer_size = MAX_BYTES_TO_READ_FROM_SOCKET_BUFFER_AT_ONCE;
+        request_pool_ptrs[handle]->fetch.responses[i].buffer = malloc(MAX_BYTES_TO_READ_FROM_SOCKET_BUFFER_AT_ONCE * sizeof(char));
+        bzero(request_pool_ptrs[handle]->fetch.responses[i].buffer, MAX_BYTES_TO_READ_FROM_SOCKET_BUFFER_AT_ONCE);
     }
         
-    int st = setjmp(request_pool[handle].fetch.resumable_ctx);
+    int st = setjmp(request_pool_ptrs[handle]->fetch.resumable_ctx);
     if (st == 0) {
         int i = 0;
         for (i = 0; i < count; i++) {
@@ -294,7 +265,7 @@ int ark_fetch(ArkFetchResponse *response, int handle, ArkFetchTaskDetails *tasks
 
             if (send(sock_fd, task.request, task.request_length, 0) == -1) {}
 
-            request_pool[handle].fetch.number_of_requests_sent++;
+            request_pool_ptrs[handle]->fetch.number_of_requests_sent++;
 
             printf("\n");
         }
@@ -304,8 +275,8 @@ int ark_fetch(ArkFetchResponse *response, int handle, ArkFetchTaskDetails *tasks
 
     printf("\n");
 
-    response->count = request_pool[st].fetch.number_of_responses_received;
-    response->responses = request_pool[st].fetch.responses;
+    response->count = request_pool_ptrs[st]->fetch.number_of_responses_received;
+    response->responses = request_pool_ptrs[st]->fetch.responses;
     
     return 0;
 }
@@ -335,31 +306,51 @@ int ark_retrive_request(ArkRequest *ark_request) {
                 if (events[nfds].events & EPOLLIN) { /** Server received new client request */   
                     int _; /** Used to check for error */
 
-                    socklen_t client_addr_len = sizeof(client_addr);
-
-                    int sock_fd = accept(socket_info->fd, (struct sockaddr *)&client_addr, &client_addr_len);
+                    int sock_fd = accept(socket_info->fd, NULL, NULL); /** Ignore the address where the request came from (for now) */
                     assert(sock_fd != -1);
 
                     int sock_fd_flags = fcntl(sock_fd, F_GETFL, 0);
                     _ = fcntl(sock_fd, F_SETFL, sock_fd_flags | O_NONBLOCK);
                     assert(_ != -1);
 
-                    SET_POOL_SLOT_AS_OCCUPIED(0); /** VERY IMPORTANT!!! Do not use pool element 0 because of setjmp/longjmp */
+                    SET_POOL_SLOT_AS_OCCUPIED(0); /** IMPORTANT! Do not use pool slot 0 because of setjmp/longjmp */
                     
-                    int pos = find_first_available_request_slot();
+                    int pos = -1;
+                    int mask_index, bit_index;
+                    for (mask_index = 0; mask_index < ARK_MAX_QUEUED_HTTP_REQUESTS / U32_BITS; ++mask_index) {
+                        u32 mask_entry = request_pool_availability_mask[mask_index];
+                        
+                        /** If all bits are set (0xFFFFFFFF), no free slots here; skip */
+                        if (mask_entry != 0xFFFFFFFFU) {
+                            for (bit_index = 0; bit_index < U32_BITS; ++bit_index) {
+                                /** Check if bit is 0 (available) */
+                                if ((mask_entry & (1U << bit_index)) == 0) {
+                                    pos = mask_index * U32_BITS + bit_index;
+                                    goto found;
+                                }
+                            }
+                        }
+                    }
+
                     assert(pos != -1);
 
+                found:;
                     SET_POOL_SLOT_AS_OCCUPIED(pos);
 
-                    request_pool[pos].socket_info.type = CLIENT_SOCKET;
-                    request_pool[pos].socket_info.fd = sock_fd;
+                    request_pool_ptrs[pos] = malloc(sizeof(HTTPRequestContext));
+                    bzero(request_pool_ptrs[pos], sizeof(HTTPRequestContext));
 
-                    request_pool[pos].client_request.buffer_size = MAX_BYTES_TO_READ_FROM_SOCKET_BUFFER_AT_ONCE;
-                    request_pool[pos].client_request.buffer = malloc(MAX_BYTES_TO_READ_FROM_SOCKET_BUFFER_AT_ONCE * sizeof(char));
-                    bzero(request_pool[pos].client_request.buffer, MAX_BYTES_TO_READ_FROM_SOCKET_BUFFER_AT_ONCE);
+                    request_pool_ptrs[pos]->socket_info.type = CLIENT_SOCKET;
+                    request_pool_ptrs[pos]->socket_info.fd = sock_fd;
+                    
+                    request_pool_ptrs[pos]->pool_pos = pos;
+
+                    request_pool_ptrs[pos]->client_request.buffer_size = MAX_BYTES_TO_READ_FROM_SOCKET_BUFFER_AT_ONCE;
+                    request_pool_ptrs[pos]->client_request.buffer = malloc(MAX_BYTES_TO_READ_FROM_SOCKET_BUFFER_AT_ONCE * sizeof(char));
+                    bzero(request_pool_ptrs[pos]->client_request.buffer, MAX_BYTES_TO_READ_FROM_SOCKET_BUFFER_AT_ONCE);
 
                     event.events = EPOLLIN | EPOLLET;
-                    event.data.ptr = &request_pool[pos].socket_info;
+                    event.data.ptr = &request_pool_ptrs[pos]->socket_info;
                     assert(epoll_ctl(epoll_fd, EPOLL_CTL_ADD, sock_fd, &event) != -1);
 
                     break;
@@ -531,7 +522,7 @@ int ark_retrive_request(ArkRequest *ark_request) {
                 
                 FetchHandle *fetch_handle = (FetchHandle *)socket_info;
                 int j = fetch_handle->pool_pos;
-                HTTPRequestContext *request = &request_pool[j];
+                HTTPRequestContext *request = request_pool_ptrs[j]; /** double check this is correct */
                 RawHTTPMessage *response = &request->fetch.responses[fetch_handle->id];
 
                 int sock_fd = socket_info->fd;
@@ -626,7 +617,7 @@ int ark_retrive_request(ArkRequest *ark_request) {
                 }
 
                 if (request->fetch.number_of_responses_received == request->fetch.number_of_requests_sent) {
-                    longjmp(request_pool[j].fetch.resumable_ctx, j);
+                    longjmp(request_pool_ptrs[j]->fetch.resumable_ctx, j);
                 }
                 
                 printf("\n");
