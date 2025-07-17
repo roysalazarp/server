@@ -29,6 +29,7 @@ typedef struct {
     size_t domain_name_length;
     char *request;
     size_t request_length;
+    uint16_t port;
 } ArkFetchTaskDetails;
 
 typedef struct {

@@ -226,15 +226,10 @@ int ark_fetch(ArkFetchResponse *response, int handle, ArkFetchTaskDetails *tasks
 
             struct sockaddr_in sock_addr;
             sock_addr.sin_family = AF_INET;   /** IPv4 */
-            sock_addr.sin_port = htons(3000); /** Convert the port number from host byte order to network byte order (big-endian) */
+            sock_addr.sin_port = htons(task.port); /** Convert the port number from host byte order to network byte order (big-endian) */
 
-            /** 
-             * If I set the socket as non-blocking before calling connect, the socket would block
-             * that's why I set it to non-blocking after, but, try to set it up as non-blocking 
-             * before calling connect and see how can I manage with setjmp and longjmp
-             */
-            _ = connect(sock_fd, (struct sockaddr *)&sock_addr, sizeof(sock_addr)); /** LEFT OFF HERE, for whatever reason the program hangs here
-                                                                                        and eventually fails with error 'Connection timed out' */
+            /** non-blocking (using fcntl) should be set after connect so it doesn't block */
+            _ = connect(sock_fd, (struct sockaddr *)&sock_addr, sizeof(sock_addr));
             assert(_ != -1);
                 
             int sock_fd_flags = fcntl(sock_fd, F_GETFL, 0);

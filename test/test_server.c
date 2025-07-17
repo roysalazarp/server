@@ -18,7 +18,6 @@ int main() {
         code = ark_retrive_request(&new_request);
         if (code == ARK_SHUT_SERVER_SIGNAL) { break; }
 
-
         char response[] = "HTTP/1.1 200 OK\r\n"
                           "Content-Type: text/html\r\n"
                           "Content-Length: 49\r\n"
@@ -35,11 +34,13 @@ int main() {
         tasks[0].domain_name_length = strlen(domain_name);
         tasks[0].request = request;
         tasks[0].request_length = strlen(request);
+        tasks[0].port = 3000;
         
         tasks[1].domain_name = domain_name;
         tasks[1].domain_name_length = strlen(domain_name);
         tasks[1].request = request;
         tasks[1].request_length = strlen(request);
+        tasks[1].port = 3000;
 
         ArkFetchResponse r;
         ark_fetch(&r, new_request.handle, tasks, 2);
