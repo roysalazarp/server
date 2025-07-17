@@ -29,11 +29,6 @@
  * when making an API call to a third-party service and the service is down. These errors
  * should be handled in whatever way makes the most sense to inform the library user and
  * gracefully handle the situation.
- *
- * NOTE: The goal is to write code that minimizes failure points. For example, instead
- * of calling malloc multiple times to allocate resources when a new request comes in,
- * a buffer should be allocated with sufficient memory upfront. If there is a special
- * case where the buffer is too small, then address that specific case appropriately.
  */
 
 #ifndef ARK_MAX_HTTP_REQUEST_SIZE
@@ -175,11 +170,6 @@ int ark_server_init(uint16_t port) {
 
     return 0;
 }
-
-/** 
- * LEFT OFF HERE, refactoring and commenting code to make it easier to understand,
- * also remember to get rid of malloc as much as possible!
- */
 
 int ark_send_response(int handle, char *response, size_t response_length) {
     printf("\n");
