@@ -46,7 +46,7 @@ typedef struct {
 
 int ark_server_init(uint16_t port);
 int ark_retrive_request(ArkRequest *ark_request);
-int ark_fetch(ArkFetchResponse *response, int handle, ArkFetchTaskDetails *tasks, int count);
+int ark_fetch(ArkFetchResponse *response, int handle, ArkFetchTaskDetails *tasks, int tasks_count);
 int ark_send_response(int handle, char *response, size_t response_length);
 
 #endif /* ARK__H */

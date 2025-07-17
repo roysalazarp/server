@@ -95,7 +95,7 @@ typedef struct {
     SocketInfo socket_info; /** IMPORTANT: SocketInfo should be the first member in the struct */
     int pool_pos;
     int id; /** TODO: Explain why this is necessary */
-} FetchHandle;
+} FetchContext;
 
 #define U32_BITS 32
 
@@ -129,6 +129,8 @@ void sigint_handler(int signo) {
 }
 
 int ark_server_init(uint16_t port) {
+    /** TODO: Validate passed arguments */
+
     int _; /** Used to check for error */
 
     /* Registers a signal handler to ensure the program exits gracefully */
@@ -177,6 +179,8 @@ int ark_server_init(uint16_t port) {
 }
 
 int ark_send_response(int handle, char *response, size_t response_length) {
+    /** TODO: Validate passed arguments */
+
     if (send(request_pool_ptrs[handle]->socket_info.fd, response, response_length, 0) == -1) {}
     close(request_pool_ptrs[handle]->socket_info.fd);
 
@@ -194,22 +198,26 @@ int ark_send_response(int handle, char *response, size_t response_length) {
     return 0;
 }
 
-int ark_fetch(ArkFetchResponse *response, int handle, ArkFetchTaskDetails *tasks, int count) {    
+int ark_fetch(ArkFetchResponse *response, int handle, ArkFetchTaskDetails *tasks, int tasks_count) {    
+    /** TODO: Validate passed arguments */
+
     int _;
-    request_pool_ptrs[handle]->fetch.responses = malloc(count * sizeof(RawHTTPMessage));
+    request_pool_ptrs[handle]->fetch.responses = malloc(tasks_count * sizeof(RawHTTPMessage));
+    assert(request_pool_ptrs[handle]->fetch.responses != NULL);
 
     int i = 0;
-    for (i = 0; i < count; i++) {
+    for (i = 0; i < tasks_count; i++) {
         bzero(&request_pool_ptrs[handle]->fetch.responses[i], sizeof(RawHTTPMessage));
         request_pool_ptrs[handle]->fetch.responses[i].buffer_size = MAX_BYTES_TO_READ_FROM_SOCKET_BUFFER_AT_ONCE;
         request_pool_ptrs[handle]->fetch.responses[i].buffer = malloc(MAX_BYTES_TO_READ_FROM_SOCKET_BUFFER_AT_ONCE * sizeof(char));
+        assert(request_pool_ptrs[handle]->fetch.responses[i].buffer != NULL);
         bzero(request_pool_ptrs[handle]->fetch.responses[i].buffer, MAX_BYTES_TO_READ_FROM_SOCKET_BUFFER_AT_ONCE);
     }
 
     int st = setjmp(request_pool_ptrs[handle]->fetch.resumable_ctx);
     if (st == 0) {
         int i = 0;
-        for (i = 0; i < count; i++) {
+        for (i = 0; i < tasks_count; i++) {
             ArkFetchTaskDetails task = tasks[i];
 
             struct addrinfo hints, *res;
@@ -225,8 +233,8 @@ int ark_fetch(ArkFetchResponse *response, int handle, ArkFetchTaskDetails *tasks
             assert(sock_fd != -1);
 
             struct sockaddr_in sock_addr;
-            sock_addr.sin_family = AF_INET;   /** IPv4 */
-            sock_addr.sin_port = htons(task.port); /** Convert the port number from host byte order to network byte order (big-endian) */
+            sock_addr.sin_family = AF_INET;         /** IPv4 */
+            sock_addr.sin_port = htons(task.port);  /** Convert the port number from host byte order to network byte order (big-endian) */
 
             /** non-blocking (using fcntl) should be set after connect so it doesn't block */
             _ = connect(sock_fd, (struct sockaddr *)&sock_addr, sizeof(sock_addr));
@@ -235,16 +243,17 @@ int ark_fetch(ArkFetchResponse *response, int handle, ArkFetchTaskDetails *tasks
             int sock_fd_flags = fcntl(sock_fd, F_GETFL, 0);
             assert(fcntl(sock_fd, F_SETFL, sock_fd_flags | O_NONBLOCK) != -1);
             
-            FetchHandle *fetch_handle = malloc(sizeof(FetchHandle));
+            FetchContext *fetch_ctx = malloc(sizeof(FetchContext));
+            assert(fetch_ctx != NULL);
 
-            fetch_handle->socket_info.fd = sock_fd;
-            fetch_handle->socket_info.type = API_SOCKET;
-            fetch_handle->pool_pos = handle;
-            fetch_handle->id = i;
+            fetch_ctx->socket_info.fd = sock_fd;
+            fetch_ctx->socket_info.type = API_SOCKET;
+            fetch_ctx->pool_pos = handle;
+            fetch_ctx->id = i;
 
             event.events = EPOLLIN;
-            event.data.ptr = &fetch_handle->socket_info;
-            assert(epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fetch_handle->socket_info.fd, &event) != -1);
+            event.data.ptr = &fetch_ctx->socket_info;
+            assert(epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fetch_ctx->socket_info.fd, &event) != -1);
 
             if (send(sock_fd, task.request, task.request_length, 0) == -1) {}
 
@@ -317,6 +326,8 @@ int ark_retrive_request(ArkRequest *ark_request) {
                     SET_POOL_SLOT_AS_OCCUPIED(pos);
 
                     request_pool_ptrs[pos] = malloc(sizeof(HTTPRequestContext));
+                    assert(request_pool_ptrs[pos] != NULL);
+
                     bzero(request_pool_ptrs[pos], sizeof(HTTPRequestContext));
 
                     request_pool_ptrs[pos]->socket_info.type = CLIENT_SOCKET;
@@ -326,6 +337,7 @@ int ark_retrive_request(ArkRequest *ark_request) {
 
                     request_pool_ptrs[pos]->client_request.buffer_size = MAX_BYTES_TO_READ_FROM_SOCKET_BUFFER_AT_ONCE;
                     request_pool_ptrs[pos]->client_request.buffer = malloc(MAX_BYTES_TO_READ_FROM_SOCKET_BUFFER_AT_ONCE * sizeof(char));
+                    assert(request_pool_ptrs[pos]->client_request.buffer != NULL);
                     bzero(request_pool_ptrs[pos]->client_request.buffer, MAX_BYTES_TO_READ_FROM_SOCKET_BUFFER_AT_ONCE);
 
                     event.events = EPOLLIN | EPOLLET;
@@ -488,10 +500,10 @@ int ark_retrive_request(ArkRequest *ark_request) {
             case API_SOCKET: {
                 /** NOTE, For now lets assume that all http responses have a Content-Length and a body */
                 
-                FetchHandle *fetch_handle = (FetchHandle *)socket_info;
-                int j = fetch_handle->pool_pos;
+                FetchContext *fetch_ctx = (FetchContext *)socket_info;
+                int j = fetch_ctx->pool_pos;
                 HTTPRequestContext *request = request_pool_ptrs[j]; /** double check this is correct */
-                RawHTTPMessage *response = &request->fetch.responses[fetch_handle->id];
+                RawHTTPMessage *response = &request->fetch.responses[fetch_ctx->id];
 
                 int sock_fd = socket_info->fd;
 
@@ -566,7 +578,7 @@ int ark_retrive_request(ArkRequest *ark_request) {
 
                             assert(epoll_ctl(epoll_fd, EPOLL_CTL_DEL, sock_fd, NULL) != -1);
                             close(sock_fd);
-                            free(fetch_handle);
+                            free(fetch_ctx);
 
                             break;
                         }
