@@ -44,11 +44,21 @@
 #define ARK_MAX_QUEUED_HTTP_REQUESTS KB(1) /** could also be SOMAXCONN */
 #endif
 
-#define MASK_3        0xFFFFFF0000000000
 #define MASK_4        0xFFFFFFFF00000000
 #define MASK_5        0xFFFFFFFFFF000000
 #define MASK_6        0xFFFFFFFFFFFF0000
 #define MASK_7        0xFFFFFFFFFFFFFF00
+#define MASK_8        0xFFFFFFFFFFFFFFFF
+
+#define GET           0x4745542000000000
+#define HEAD          0x4845414420000000
+#define TRACE         0x5452414345200000
+#define CONNECT       0x434F4E4E45435420
+#define PUT           0x5055542000000000
+#define POST          0x504F535420000000
+#define PATCH         0x5041544348200000
+#define DELETE        0x44454C4554452000
+#define OPTIONS       0x4F5054494F4E5320
 
 #define READ64LE(P)                    \
   (__extension__({                     \
@@ -270,6 +280,7 @@ int ark_fetch(ArkFetchResponse *response, int handle, ArkFetchTaskDetails *tasks
 }
 
 int ark_retrive_request(ArkRequest *ark_request) {    
+    int _;
     begining:;
 
     setjmp(event_loop); /** Point of return */
@@ -342,7 +353,8 @@ int ark_retrive_request(ArkRequest *ark_request) {
 
                     event.events = EPOLLIN | EPOLLET;
                     event.data.ptr = &request_pool_ptrs[pos]->socket_info;
-                    assert(epoll_ctl(epoll_fd, EPOLL_CTL_ADD, sock_fd, &event) != -1);
+                    _ = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, sock_fd, &event);
+                    assert(_ != -1);
 
                     break;
                 }
@@ -366,66 +378,60 @@ int ark_retrive_request(ArkRequest *ark_request) {
                         if (!ctx->client_request.headers_checked) { /** Checking the HTTP request headers helps us determine how many bytes to expect in the request */
                             boolean has_content_length = false;
                             u64 content_length = 0;
-                            size_t request_cursor = 0;
-                            while (*((uint32_t *)(&ctx->client_request.buffer[request_cursor])) != END_OF_HTTP_MESSAGE_HEADERS) {
-                                if (memcmp(&ctx->client_request.buffer[request_cursor], "Content-Length", strlen("Content-Length")) == 0) {
-                                    request_cursor += strlen("Content-Length");
+                            size_t cursor = 0;
+                            while (*((uint32_t *)(&ctx->client_request.buffer[cursor])) != END_OF_HTTP_MESSAGE_HEADERS) {
+                                if (memcmp(&ctx->client_request.buffer[cursor], "Content-Length", strlen("Content-Length")) == 0) {
+                                    cursor += strlen("Content-Length");
 
                                     has_content_length = true;
 
-                                    while (ctx->client_request.buffer[request_cursor] == ' ' || ctx->client_request.buffer[request_cursor] == ':') {
-                                        request_cursor++;
+                                    while (ctx->client_request.buffer[cursor] == ' ' || ctx->client_request.buffer[cursor] == ':') {
+                                        cursor++;
                                     }
 
-                                    while (!isspace(ctx->client_request.buffer[request_cursor])) {
-                                        if (!is_digit((unsigned char)ctx->client_request.buffer[request_cursor])) {
+                                    while (!isspace(ctx->client_request.buffer[cursor])) {
+                                        if (!is_digit((unsigned char)ctx->client_request.buffer[cursor])) {
                                             assert(0);
                                         }
 
-                                        content_length = content_length * 10 + (ctx->client_request.buffer[request_cursor] - '0');
+                                        content_length = content_length * 10 + (ctx->client_request.buffer[cursor] - '0');
 
-                                        /** Prevent overflow — 56-bit max value as a safety ceiling */
-                                        if (content_length > 0x000000ffffffffffLL) {
-                                            assert(0);
-                                        }
-
-                                        request_cursor++;
+                                        cursor++;
                                     }
                                 } else {
-                                    request_cursor++;
+                                    cursor++;
                                 }
                             }
 
-                            request_cursor += strlen("\r\n\r\n");
-
+                            cursor += 4; /* skip END_OF_HTTP_MESSAGE_HEADERS "\n\r\n\r" */
                             ctx->client_request.headers_checked = true;
 
                             /** At this point we know the length of the headers and we know the Content-Length if there is one */
-                            
-                            if (((READ64BE(ctx->client_request.buffer) & MASK_3) == READ64BE("GET\0\0\0\0")) ||
-                                ((READ64BE(ctx->client_request.buffer) & MASK_4) == READ64LE("HEAD\0\0\0"))  ||
-                                ((READ64BE(ctx->client_request.buffer) & MASK_5) == READ64LE("TRACE\0\0"))   ||
-                                ((READ64BE(ctx->client_request.buffer) & MASK_7) == READ64LE("CONNECT")))
+
+                            u64 http_method = *(u64 *)ctx->client_request.buffer;
+
+                            if (((__builtin_bswap64(http_method) & MASK_4) == GET)   ||
+                                ((__builtin_bswap64(http_method) & MASK_5) == HEAD)  ||
+                                ((__builtin_bswap64(http_method) & MASK_6) == TRACE) ||
+                                ((__builtin_bswap64(http_method) & MASK_8) == CONNECT)) 
                             {
-                                /** Check for "\r\n\r\n", there CAN NOT be Content-Length header */
-                                if (has_content_length) {
-                                    assert(0);
-                                }
-                            } else if (((READ64BE(ctx->client_request.buffer) & MASK_3) ==  READ64BE("PUT\0\0\0\0")) ||
-                                       ((READ64BE(ctx->client_request.buffer) & MASK_4) ==  READ64BE("POST\0\0\0"))  ||
-                                       ((READ64BE(ctx->client_request.buffer) & MASK_5) ==  READ64BE("PATCH\0\0")))
+                                /** HTTP requests with these methods can NOT contain a Content-Length header */
+                                assert(!has_content_length);
+                            } else if (((__builtin_bswap64(http_method) & MASK_4) == PUT)  ||
+                                       ((__builtin_bswap64(http_method) & MASK_5) == POST) ||
+                                       ((__builtin_bswap64(http_method) & MASK_6) == PATCH)) 
                             {
-                                /** There MUST be a Content-Length header */
-                                if (!has_content_length) {
-                                    assert(0);
-                                }
-                            } else if (((READ64BE(ctx->client_request.buffer) & MASK_6) ==  READ64BE("DELETE\0")) ||
-                                       ((READ64BE(ctx->client_request.buffer) & MASK_7) ==  READ64BE("OPTIONS")))
+                                /** HTTP requests with these methods MUST contain a Content-Length header */
+                                assert(has_content_length);
+                            } else if (((__builtin_bswap64(http_method) & MASK_7) == DELETE) ||
+                                       ((__builtin_bswap64(http_method) & MASK_8) == OPTIONS)) 
                             {
                                 /** There MAY be a Content-Length header */
                             }
+                            
+                            size_t presice_request_size = cursor + content_length;
+                            assert(presice_request_size <= ARK_MAX_HTTP_REQUEST_SIZE);
 
-                            size_t presice_request_size = request_cursor + content_length;
                             if (presice_request_size != ctx->client_request.buffer_size) {
                                 ctx->client_request.buffer_size = presice_request_size;
                                 ctx->client_request.buffer = realloc(ctx->client_request.buffer, ctx->client_request.buffer_size);
@@ -433,14 +439,6 @@ int ark_retrive_request(ArkRequest *ark_request) {
                             }
                         }
 
-                        /** NOTE
-                         *  - When the same header is present multiple times in the http request we only consider the last one, the user should only send one header and separate the content with comas.
-                         *  - Standard and custom http headers should be register in the "perfect hash table".
-                         *  - POST, PUT and PATCH methods must have a Content-Length header, other http methods are not allowed to have a body.
-                         *  - Should I accept POST, PUT and PATCH methods without a Content-Length header but a Transfer-Encoding "chunked"?
-                         * 
-                         *  NOTE, All http request messages (start line + headers) end with "\r\n\r\n" and after that is the start of the body
-                         */
                         if (got > 0) {
                             ctx->client_request.received_bytes += (size_t)got;
                             printf("received_bytes so far: %lu\n", ctx->client_request.received_bytes);
@@ -449,37 +447,19 @@ int ark_retrive_request(ArkRequest *ark_request) {
                                 printf("Client disconnected\n");
                             } else if (errno == EAGAIN || errno == EWOULDBLOCK) { 
                                 perror(NULL);
-                                /**
-                                * NOTE
-                                * When handling large requests that don't fit entirely in the I/O buffer (e.g., when a user uploads a large file),
-                                * `epoll` may notify us multiple times for the same file descriptor as new data arrives.
-                                * 
-                                * This means that even if we've read all currently available data and encounter `EWOULDBLOCK`,
-                                * the full request may not have been received yet. More data may still be incoming as the client
-                                * continues writing to the I/O buffer.
-                                * 
-                                * Therefore, we must not assume that reading the I/O buffer to completion indicates the entire request has been received,
-                                * nor should we prematurely process the HTTP request. Instead, we should store the partial data in a separate buffer,
-                                * continue accumulating incoming data, and only process the request once it has been fully received.
-                                */   
                             }
                             
-                            /** Full HTTP headers received */
                             if (ctx->client_request.received_bytes == ctx->client_request.buffer_size) {
+                                /** Full HTTP message received */
                                 break;
+                            } else {
+                                goto begining;
                             }
                         }
 
-                        /** 
-                        * HTTP request needs to be parsed at this point.
-                        * Memory arena size might need increasing depending on the request size, for example,
-                        * when a large file is uploaded we would need to check for the content length header
-                        * to see how big is the file and resize the arena accordingly.
-                        * 
-                        * The framework user might want to say whether they accept file uploads at all, or only
-                        * on certain endpoints or a limit size of the file upload. We can for example exit the 
-                        * request early if user is not allowed to upload file.
-                        */
+                        if (ctx->client_request.received_bytes == ctx->client_request.buffer_size) {
+                            break;
+                        }
                     }
 
                     printf("received %lu\n", ctx->client_request.received_bytes);
@@ -501,13 +481,12 @@ int ark_retrive_request(ArkRequest *ark_request) {
                 /** NOTE, For now lets assume that all http responses have a Content-Length and a body */
                 
                 FetchContext *fetch_ctx = (FetchContext *)socket_info;
-                int j = fetch_ctx->pool_pos;
-                HTTPRequestContext *request = request_pool_ptrs[j]; /** double check this is correct */
+                int pos = fetch_ctx->pool_pos;
+                HTTPRequestContext *request = request_pool_ptrs[pos];
                 RawHTTPMessage *response = &request->fetch.responses[fetch_ctx->id];
 
                 int sock_fd = socket_info->fd;
 
-                /** TODO, read api response with recv */
                 while (true) {
                     size_t remaining_allowed = ARK_MAX_HTTP_REQUEST_SIZE - response->received_bytes;
                     size_t max_read = MIN2(MAX_BYTES_TO_READ_FROM_SOCKET_BUFFER_AT_ONCE, remaining_allowed);
@@ -518,8 +497,8 @@ int ark_retrive_request(ArkRequest *ark_request) {
                         boolean has_content_length = false;
                         u64 content_length = 0;
                         size_t cursor = 0;
-                        while (*((uint32_t *)(&response->buffer[cursor])) != END_OF_HTTP_MESSAGE_HEADERS) { /** Check for "\r\n\r\n" s*/
-                            if (memcmp(&response->buffer[cursor], "Content-Length", strlen("Content-Length")) == 0) { /** Check for Content-Length */
+                        while (*((uint32_t *)(&response->buffer[cursor])) != END_OF_HTTP_MESSAGE_HEADERS) {
+                            if (memcmp(&response->buffer[cursor], "Content-Length", strlen("Content-Length")) == 0) {
                                 cursor += strlen("Content-Length");
 
                                 has_content_length = true;
@@ -535,11 +514,6 @@ int ark_retrive_request(ArkRequest *ark_request) {
 
                                     content_length = content_length * 10 + (response->buffer[cursor] - '0');
 
-                                    /** Prevent overflow — 56-bit max value as a safety ceiling */
-                                    if (content_length > 0x000000ffffffffffLL) {
-                                        assert(0);
-                                    }
-
                                     cursor++;
                                 }
                             } else {
@@ -547,11 +521,12 @@ int ark_retrive_request(ArkRequest *ark_request) {
                             }
                         }
 
-                        cursor += strlen("\r\n\r\n");
-
+                        cursor += 4; /* skip END_OF_HTTP_MESSAGE_HEADERS "\n\r\n\r" */
                         response->headers_checked = true;
 
                         size_t presice_request_size = cursor + content_length;
+                        assert(presice_request_size <= ARK_MAX_HTTP_REQUEST_SIZE);
+
                         if (presice_request_size != response->buffer_size) {
                             response->buffer_size = presice_request_size;
                             response->buffer = realloc(response->buffer, response->buffer_size);
@@ -566,27 +541,32 @@ int ark_retrive_request(ArkRequest *ark_request) {
                         if (!got) {
                             printf("client disconnected\n");
                         } else if (errno == EAGAIN || errno == EWOULDBLOCK) { 
-                            printf("recv error: %s\n", strerror(errno));
-                        }
-                        
-                        if (got == -1 && errno != EAGAIN && errno != EWOULDBLOCK) {
                             perror(NULL);
                         }
                         
                         if (response->received_bytes == response->buffer_size) {
+                            /** Full HTTP message received */
                             request->fetch.number_of_responses_received++;
 
-                            assert(epoll_ctl(epoll_fd, EPOLL_CTL_DEL, sock_fd, NULL) != -1);
+                            _ = epoll_ctl(epoll_fd, EPOLL_CTL_DEL, sock_fd, NULL);
+                            assert(_ != -1);
+
                             close(sock_fd);
                             free(fetch_ctx);
 
                             break;
+                        } else {
+                            goto begining;
                         }
+                    }
+
+                    if (response->received_bytes == response->buffer_size) {
+                        break;
                     }
                 }
 
                 if (request->fetch.number_of_responses_received == request->fetch.number_of_requests_sent) {
-                    longjmp(request_pool_ptrs[j]->fetch.resumable_ctx, j);
+                    longjmp(request_pool_ptrs[pos]->fetch.resumable_ctx, pos);
                 }
                 
                 break;
