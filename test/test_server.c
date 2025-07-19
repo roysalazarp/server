@@ -11,9 +11,8 @@
 int main() {
     ark_server_init((uint16_t)8080);
 
+    int code;
     while (1) {
-        int code;
-
         ArkRequest new_request;
         code = ark_retrive_request(&new_request);
         if (code == ARK_SHUT_SERVER_SIGNAL) { break; }

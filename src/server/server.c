@@ -14,6 +14,7 @@
 
 #include "../../include/ark/shared.h"
 #include "../../include/ark/server.h"
+#include "../../include/ark/memory.h"
 #include "../utils.h"
 
 /**
@@ -87,6 +88,7 @@ typedef struct {
 
 typedef struct {
     SocketInfo socket_info; /** IMPORTANT: SocketInfo should be the first member in the struct */
+    Memory *memory;
     RawHTTPMessage client_request;
     struct {
         jmp_buf resumable_ctx; /** 
@@ -200,7 +202,7 @@ int ark_send_response(int handle, char *response, size_t response_length) {
         free(request_pool_ptrs[handle]->fetch.responses[i].buffer);
     }
     
-    free(request_pool_ptrs[handle]);
+    memory_free(request_pool_ptrs[handle]->memory);
     request_pool_ptrs[handle] = NULL;
     
     SET_POOL_SLOT_AS_AVAILABLE(handle);
@@ -212,17 +214,19 @@ int ark_fetch(ArkFetchResponse *response, int handle, ArkFetchTaskDetails *tasks
     /** TODO: Validate passed arguments */
 
     int _;
-    request_pool_ptrs[handle]->fetch.responses = malloc(tasks_count * sizeof(RawHTTPMessage));
-    assert(request_pool_ptrs[handle]->fetch.responses != NULL);
+    
+    Memory *memory = request_pool_ptrs[handle]->memory;
+    request_pool_ptrs[handle]->fetch.responses = memory_alloc(memory, tasks_count * sizeof(RawHTTPMessage));
 
     int i = 0;
     for (i = 0; i < tasks_count; i++) {
-        bzero(&request_pool_ptrs[handle]->fetch.responses[i], sizeof(RawHTTPMessage));
         request_pool_ptrs[handle]->fetch.responses[i].buffer_size = MAX_BYTES_TO_READ_FROM_SOCKET_BUFFER_AT_ONCE;
         request_pool_ptrs[handle]->fetch.responses[i].buffer = malloc(MAX_BYTES_TO_READ_FROM_SOCKET_BUFFER_AT_ONCE * sizeof(char));
         assert(request_pool_ptrs[handle]->fetch.responses[i].buffer != NULL);
         bzero(request_pool_ptrs[handle]->fetch.responses[i].buffer, MAX_BYTES_TO_READ_FROM_SOCKET_BUFFER_AT_ONCE);
     }
+
+    FetchContext *fetch_ctxs = memory_alloc(memory, tasks_count * sizeof(FetchContext));
 
     int st = setjmp(request_pool_ptrs[handle]->fetch.resumable_ctx);
     if (st == 0) {
@@ -242,7 +246,7 @@ int ark_fetch(ArkFetchResponse *response, int handle, ArkFetchTaskDetails *tasks
             int sock_fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
             assert(sock_fd != -1);
 
-            struct sockaddr_in sock_addr;
+            struct sockaddr_in sock_addr = {0};
             sock_addr.sin_family = AF_INET;         /** IPv4 */
             sock_addr.sin_port = htons(task.port);  /** Convert the port number from host byte order to network byte order (big-endian) */
 
@@ -252,9 +256,8 @@ int ark_fetch(ArkFetchResponse *response, int handle, ArkFetchTaskDetails *tasks
                 
             int sock_fd_flags = fcntl(sock_fd, F_GETFL, 0);
             assert(fcntl(sock_fd, F_SETFL, sock_fd_flags | O_NONBLOCK) != -1);
-            
-            FetchContext *fetch_ctx = malloc(sizeof(FetchContext));
-            assert(fetch_ctx != NULL);
+
+            FetchContext *fetch_ctx = &fetch_ctxs[i];
 
             fetch_ctx->socket_info.fd = sock_fd;
             fetch_ctx->socket_info.type = API_SOCKET;
@@ -263,7 +266,8 @@ int ark_fetch(ArkFetchResponse *response, int handle, ArkFetchTaskDetails *tasks
 
             event.events = EPOLLIN;
             event.data.ptr = &fetch_ctx->socket_info;
-            assert(epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fetch_ctx->socket_info.fd, &event) != -1);
+            _ = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fetch_ctx->socket_info.fd, &event);
+            assert(_ != -1);
 
             if (send(sock_fd, task.request, task.request_length, 0) == -1) {}
 
@@ -336,10 +340,9 @@ int ark_retrive_request(ArkRequest *ark_request) {
                 found:;
                     SET_POOL_SLOT_AS_OCCUPIED(pos);
 
-                    request_pool_ptrs[pos] = malloc(sizeof(HTTPRequestContext));
-                    assert(request_pool_ptrs[pos] != NULL);
-
-                    bzero(request_pool_ptrs[pos], sizeof(HTTPRequestContext));
+                    Memory *memory = reserve_memory(KB(1));
+                    request_pool_ptrs[pos] = memory_alloc(memory, sizeof(HTTPRequestContext));
+                    request_pool_ptrs[pos]->memory = memory;
 
                     request_pool_ptrs[pos]->socket_info.type = CLIENT_SOCKET;
                     request_pool_ptrs[pos]->socket_info.fd = sock_fd;
@@ -552,7 +555,6 @@ int ark_retrive_request(ArkRequest *ark_request) {
                             assert(_ != -1);
 
                             close(sock_fd);
-                            free(fetch_ctx);
 
                             break;
                         } else {

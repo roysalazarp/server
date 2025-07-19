@@ -15,5 +15,6 @@ typedef struct {
 Memory *reserve_memory(size_t size);
 void *memory_alloc(Memory *memory, size_t size);
 void memory_reset(Memory *memory, u8 *ptr);
+void memory_free(Memory *memory);
 
 #endif /* ARK_MEMORY_H */

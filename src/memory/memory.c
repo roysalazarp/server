@@ -61,3 +61,8 @@ void memory_reset(Memory *memory, u8 *ptr) {
     memory->current = ptr;
     memory->used = (u8 *)memory->current - (u8 *)memory->start;
 }
+
+void memory_free(Memory *memory) {
+    munmap(memory->start, memory->size);
+}
+
