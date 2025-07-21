@@ -15,7 +15,7 @@
 #include "../../include/ark/shared.h"
 #include "../../include/ark/server.h"
 #include "../../include/ark/memory.h"
-#include "../utils.h"
+#include "../../include/ark/utils.h"
 
 /**
  * ERROR HANDLING
@@ -91,7 +91,7 @@ typedef struct {
     Memory *memory;
     RawHTTPMessage client_request;
     struct {
-        jmp_buf resumable_ctx; /** 
+        jmp_buf resumable_ctx; /**
                                 * Stores the program state at the point where a call to an external 
                                 * server is made. Used to resume execution from this point once the 
                                 * server response is received. 
@@ -467,8 +467,8 @@ int ark_retrive_request(ArkRequest *ark_request) {
 
                     printf("received %lu\n", ctx->client_request.received_bytes);
                                           
-                    ark_request->raw = NULL;
-                    ark_request->length = 0;
+                    ark_request->raw = (char *)ctx->client_request.buffer;
+                    ark_request->length = ctx->client_request.buffer_size;
                     ark_request->handle = ctx->pool_pos;
                     
                     return 0;

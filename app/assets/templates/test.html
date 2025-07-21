@@ -1,0 +1,63 @@
+<x-component-def name="foo">
+    <div class="foo">
+        <x-component name="layout">
+            <x-insert name="content">
+                <h1>Foo</h1>
+                <div>
+                    <x-component name="bar" firstname="John">
+                        <x-insert name="lastname"> 
+                            Doe
+                        </x-insert>
+                    </x-component>
+                </div>
+            </x-insert>
+        </x-component>
+    </div>
+</x-component-def>
+
+<x-component-def name="layout">
+    <div class="layout">
+        <x-slot name="content" />
+    </div>
+</x-component-def>
+
+<x-component-def name="bar">
+    <div class="bar">
+        <h2>%firstname%</h2>
+        <div>
+            <x-component name="baz">
+                <x-insert name="text">
+                    <div>hahah</div>
+                    <x-slot name="lastname" />
+                </x-insert>
+            </x-component>
+        </div>
+    </div>
+</x-component-def>
+
+<x-component-def name="baz">
+    <div class="baz">
+        <div>
+            <x-slot name="text" />
+        </div>
+    </div>
+</x-component-def>
+
+<div class="foo">
+    <div class="layout">
+        <h1>Foo</h1>
+        <div>
+            <div class="bar">
+                <h2>John</h2>
+                <div>
+                    <div class="baz">
+                        <div>
+                            <div>hahah</div>
+                            Doe
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

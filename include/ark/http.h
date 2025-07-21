@@ -126,6 +126,6 @@ typedef struct {
 } ARKHttpMessage;
 
 /* Parse HTTP message */
-int ark_parse_http_request_message(ARKHttpMessage *http_msg, char *raw_http_msg, size_t raw_http_msg_length, size_t chunck_to_process_length);
+int ark_parse_http_request_message(ARKHttpMessage *http_msg, char *raw_http_msg, size_t raw_http_msg_length);
 
 #endif /* ARK_HTTP_H */

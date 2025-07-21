@@ -40,4 +40,9 @@ typedef u8 boolean;
 #define assert(condition)
 #endif
 
+typedef struct {
+    char *data;
+    size_t length;
+} String;
+
 #endif /* SHARED_H */

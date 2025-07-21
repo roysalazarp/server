@@ -4,6 +4,7 @@
 
 #include "ark/shared.h"
 #include "ark/server.h"
+#include "ark/utils.h"
 
 #define ARK_MAX_HTTP_REQUEST_SIZE MB(300)
 #define ARK_MAX_QUEUED_HTTP_REQUESTS 500

@@ -52,7 +52,7 @@
 #define HttpStateLf1     10
 #define HttpStateLf2     11
 
-int ark_parse_http_request_message(ARKHttpMessage *http_msg, char *raw_http_msg, size_t raw_http_msg_length, size_t processed_bytes);
+int ark_parse_http_request_message(ARKHttpMessage *http_msg, char *raw_http_msg, size_t raw_http_msg_length);
 
 /* const char *GetHttpReason(int); */
 /* const char *GetHttpHeaderName(int); */

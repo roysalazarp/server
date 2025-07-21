@@ -34,6 +34,10 @@ $CC -shared lib/server.o -o lib/libark_server.so
 $CC $CFLAGS -fPIC -c src/profiler/profiler.c -o lib/profiler.o
 $CC -shared lib/profiler.o -o lib/libark_profiler.so
 
+# Utils module
+$CC $CFLAGS -fPIC -c src/utils/utils.c -o lib/utils.o
+$CC -shared lib/utils.o -o lib/libark_utils.so
+
 echo "📦 Packaging SDK..."
 
 # Copy public headers to SDK include folder
@@ -52,8 +56,12 @@ $CC $CFLAGS -I./ArkSDK/include test/test_json.c \
 $CC $CFLAGS -I./ArkSDK/include test/test_http.c \
     -L./ArkSDK/lib -lark_http -o test/test_http
 
-$CC $CFLAGS -I./ArkSDK/include src/utils.c test/test_server.c \
-    -L./ArkSDK/lib -lark_server -lark_memory -o test/test_server
+$CC $CFLAGS -I./ArkSDK/include test/test_server.c \
+    -L./ArkSDK/lib -lark_server -lark_memory -lark_utils -o test/test_server
+
+SRC_FILES=$(find ./app/src -name "*.c")
+$CC $CFLAGS $SRC_FILES -I./ArkSDK/include \
+    -L./ArkSDK/lib -lark_server -lark_memory -lark_http -lark_utils -o ./app/bin
 
 echo "🚀 Running test..."
 LD_LIBRARY_PATH=$(pwd)/ArkSDK/lib ./test/test_json

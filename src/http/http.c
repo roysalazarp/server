@@ -2,7 +2,7 @@
 #include <stdlib.h>
 
 #include "http_internal.h"
-#include "../utils.h"
+#include "../../include/ark/utils.h"
 #include "gethttpheader.c"
 
 #define SHRT_MAX 0x7fff
@@ -45,19 +45,10 @@ int get_http_header(const char *str, size_t len) {
  * 
  *  NOTE, All http request messages (start line + headers) end with "\r\n\r\n" and after that is the start of the body
  */
-int ark_parse_http_request_message(ARKHttpMessage *http_msg, char *raw_http_msg, size_t raw_http_msg_length, size_t chunck_to_process_length) {
+int ark_parse_http_request_message(ARKHttpMessage *http_msg, char *raw_http_msg, size_t raw_http_msg_length) {
     size_t i = 0;
     int http_header = 0;
     int c = 0; /** ASCII character */
-
-    if (raw_http_msg_length > chunck_to_process_length) {
-        assert(0);
-        return -1;
-    }
-    
-    /** Do we really need to cut here? */
-    raw_http_msg_length = raw_http_msg_length > SHRT_MAX ? SHRT_MAX : raw_http_msg_length;
-    chunck_to_process_length = chunck_to_process_length > SHRT_MAX ? SHRT_MAX : chunck_to_process_length;
 
     for (; http_msg->cursor < raw_http_msg_length; ++http_msg->cursor) {
         c = raw_http_msg[http_msg->cursor] & 255;
@@ -273,9 +264,11 @@ int ark_parse_http_request_message(ARKHttpMessage *http_msg, char *raw_http_msg,
             }
         }
     }
-    if (http_msg->cursor < chunck_to_process_length) {
+    
+    if (http_msg->cursor < raw_http_msg_length) {
         return 0;
     }
+
     assert(0);
     return -1;
 }
