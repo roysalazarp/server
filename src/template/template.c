@@ -142,8 +142,8 @@ typedef struct {
     size_t pos_start;
 } ComplComp;
 
-boolean is_html_path(String path) {
-    if (strncmp(path.data + path.length - strlen(".html"), ".html", strlen(".html")) == 0) {
+boolean is_html_path(char *path, size_t path_length) {
+    if (strncmp(path + path_length - strlen(".html"), ".html", strlen(".html")) == 0) {
         return true;
     }
 
@@ -889,16 +889,18 @@ void print_no_attribute_allowed_error(String content, char *error, String file_p
     */
 }
 
-Lexer lexer_init(String file_path, String content) {
+Lexer lexer_init(char *file_path, size_t file_path_length, char *content, size_t content_length) {
     Lexer lexer = {0};
-    lexer.file_path = file_path;
-    lexer.content = content;
+    lexer.file_path.data = file_path;
+    lexer.file_path.length = file_path_length;
+    lexer.content.data = content;
+    lexer.content.length = content_length;
     lexer.line_number = 1;
 
     return lexer;
 }
 
-int ark_validate_components(String *array_of_filepaths, String *file_content_array, uint32_t array_length) {
+int ark_validate_components(char **array_of_filepaths, char **file_content_array, uint32_t array_length) {
     uint32_t i;
 
     ComponentSOA components_soa = {0};
@@ -908,11 +910,11 @@ int ark_validate_components(String *array_of_filepaths, String *file_content_arr
     /* Count amount of component across all html files: needed for allocations */
     /* NOTE: This can probably benefit greatly from SIMD. */
     for (i = 0; i < array_length; i++) {
-        if (!is_html_path(array_of_filepaths[i])) {
+        if (!is_html_path(array_of_filepaths[i], strlen(array_of_filepaths[i]))) {
             continue;
         }
 
-        Lexer lexer = lexer_init(array_of_filepaths[i], file_content_array[i]);
+        Lexer lexer = lexer_init(array_of_filepaths[i], strlen(array_of_filepaths[i]), file_content_array[i], strlen(file_content_array[i]));
 
         String opening_tag = {0};
         uint32_t opening_tag_line_number = 0;
@@ -974,11 +976,11 @@ int ark_validate_components(String *array_of_filepaths, String *file_content_arr
      NOTE: This can probably benefit greatly from SIMD.
     */
     for (i = 0; i < array_length; i++) {
-        if (!is_html_path(array_of_filepaths[i])) {
+        if (!is_html_path(array_of_filepaths[i], strlen(array_of_filepaths[i]))) {
             continue;
         }
 
-        Lexer lexer = lexer_init(array_of_filepaths[i], file_content_array[i]);
+        Lexer lexer = lexer_init(array_of_filepaths[i], strlen(array_of_filepaths[i]), file_content_array[i], strlen(file_content_array[i]));
 
         while (lexer.cursor < lexer.content.length) {
             char *c = peek(&lexer);
@@ -1058,11 +1060,11 @@ int ark_validate_components(String *array_of_filepaths, String *file_content_arr
     node_array.data = memory_alloc(memory, sizeof(Node *) * tag_stack_max);
 
     for (i = 0; i < array_length; i++) {
-        if (!is_html_path(array_of_filepaths[i])) {
+        if (!is_html_path(array_of_filepaths[i], strlen(array_of_filepaths[i]))) {
             continue;
         }
 
-        Lexer lexer = lexer_init(array_of_filepaths[i], file_content_array[i]);
+        Lexer lexer = lexer_init(array_of_filepaths[i], strlen(array_of_filepaths[i]), file_content_array[i], strlen(file_content_array[i]));
 
         Token token = get_next_token(&lexer);
         while (token.kind != TOKEN_EOF) {

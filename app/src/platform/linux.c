@@ -22,41 +22,38 @@ int main() {
     ark_server_init((uint16_t)8080);
     
     uint32_t num_of_filepaths = 0;
-    size_t longest_filepath = 0;
-    ark_count_files(&num_of_filepaths, &longest_filepath, MYDIR);
+    ark_count_files(&num_of_filepaths, MYDIR);
     
     Memory *memory = reserve_memory(PAGE_SIZE * 50);
     
-    /** flat refers to null-terminated filepaths */
-    char *flat_array_of_filepaths = memory_alloc(memory, num_of_filepaths * longest_filepath);
     size_t *array_of_lengths = memory_alloc(memory, num_of_filepaths * sizeof(size_t));
+    ark_list_file_sizes(array_of_lengths, num_of_filepaths, MYDIR);
     
-    ark_list_files(flat_array_of_filepaths, array_of_lengths, num_of_filepaths, longest_filepath, MYDIR);
-    
-    String *array_of_filepaths = memory_alloc(memory, num_of_filepaths * sizeof(String));
+    char **array_of_filepaths = memory_alloc(memory, num_of_filepaths * sizeof(char *));
     for (i = 0; i < num_of_filepaths; i++) {
-        array_of_filepaths[i].data = flat_array_of_filepaths + (i * longest_filepath);
-        array_of_filepaths[i].length = *(array_of_lengths + (i * sizeof(size_t)));
+        array_of_filepaths[i] = (char *)memory_alloc(memory, array_of_lengths[i] * sizeof(char));
     }
 
-    String *file_content_array = memory_alloc(memory, num_of_filepaths * sizeof(String));
+    ark_list_files(array_of_filepaths, num_of_filepaths, MYDIR);
+
+    char **array_of_file_contents = memory_alloc(memory, num_of_filepaths * sizeof(char *));
 
     for (i = 0; i < num_of_filepaths; i++) {
-        char *filepath = array_of_filepaths[i].data;
+        char *filepath = array_of_filepaths[i];
         
         size_t file_size = ark_get_file_size(filepath);
-        char *file_content = memory_alloc(memory, file_size);
+        char *file_content = memory_alloc(memory, file_size + 1);
             
         FILE *file = fopen(filepath, "r");
         size_t read_size = fread(file_content, sizeof(char), file_size, file);
         assert(read_size == file_size);
+        file_content[file_size + 1] = '\0';
         fclose(file);
 
-        file_content_array[i].data = file_content;
-        file_content_array[i].length = file_size;
+        array_of_file_contents[i] = file_content;
     }
 
-    ark_validate_components(array_of_filepaths, file_content_array, num_of_filepaths);
+   ark_validate_components(array_of_filepaths, array_of_file_contents, num_of_filepaths);
     
     int code;
     while (1) {

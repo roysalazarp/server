@@ -26,7 +26,7 @@ unsigned long available_ram() {
     return 0;
 }
 
-int ark_count_files(uint32_t *num_of_filepaths, size_t *longest_filepath, char *root_path) {
+int ark_count_files(uint32_t *num_of_filepaths, char *root_path) {
     int _;
     DIR *dir = opendir(root_path);
     if (dir == NULL) {
@@ -51,15 +51,10 @@ int ark_count_files(uint32_t *num_of_filepaths, size_t *longest_filepath, char *
         boolean is_dir = (boolean)(stat(path_buffer, &statbuf) == 0 && S_ISDIR(statbuf.st_mode));
 
         if (is_dir) {
-            _ = ark_count_files(num_of_filepaths, longest_filepath, path_buffer);
+            _ = ark_count_files(num_of_filepaths, path_buffer);
             assert(_ != -1);
         } else {
             (*num_of_filepaths)++;
-            printf("%s\n", path_buffer);
-            size_t len = strlen(path_buffer) + 1;
-            if (len > *longest_filepath) {
-                *longest_filepath = len;
-            }
         }
     }
 
@@ -67,46 +62,91 @@ int ark_count_files(uint32_t *num_of_filepaths, size_t *longest_filepath, char *
     return 0;
 }
 
-
-void list_files_recursive(char *filepath_array, size_t *filepath_length_array, uint32_t filepath_array_length, size_t max_filepath_item_length, char *base_path, uint32_t *internal_count);
-void list_files_recursive(char *filepath_array, size_t *filepath_length_array, uint32_t filepath_array_length, size_t max_filepath_item_length, char *base_path, uint32_t *internal_count) {
+int list_files_recursive(char **array_of_filepaths, uint32_t num_of_filepaths, char *base_path, uint32_t *internal_count);
+int list_files_recursive(char **array_of_filepaths, uint32_t num_of_filepaths, char *base_path, uint32_t *internal_count) {
+    int _;
     DIR *dir = opendir(base_path);
-    assert(dir != NULL);
+    if (dir == NULL) {
+        perror(NULL);
+        return -1;
+    }
 
-    struct dirent *entry;
-    struct stat statbuf;
-
-    char *path_buffer = malloc(max_filepath_item_length);
-    assert(path_buffer != NULL);
-    bzero(path_buffer, max_filepath_item_length);
+    struct dirent *entry = {0};
+    struct stat statbuf = {0};
+    char path_buffer[PATH_MAX];
+    memset(path_buffer, 0, PATH_MAX);
 
     while ((entry = readdir(dir)) != NULL) {
-        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+        boolean dot_dir = (boolean)(strcmp(entry->d_name, ".") == 0);
+        boolean dot_dot_dir = (boolean)(strcmp(entry->d_name, "..") == 0);
+
+        if (dot_dir || dot_dot_dir) {
             continue;
         }
 
         sprintf(path_buffer, "%s/%s", base_path, entry->d_name);
+        boolean is_dir = (boolean)(stat(path_buffer, &statbuf) == 0 && S_ISDIR(statbuf.st_mode));
 
-        if (stat(path_buffer, &statbuf) == 0 && S_ISDIR(statbuf.st_mode)) {
-            list_files_recursive(filepath_array, filepath_length_array, filepath_array_length, max_filepath_item_length, path_buffer, internal_count);
+        if (is_dir) {
+            _ = list_files_recursive(array_of_filepaths, num_of_filepaths, path_buffer, internal_count);
+            assert(_ != -1);
         } else {
-            char *filepath_slot = filepath_array + (*internal_count * max_filepath_item_length);
-            memcpy(filepath_slot, path_buffer, max_filepath_item_length);
-
-            size_t *filepath_length_slot = filepath_length_array + (*internal_count * sizeof(size_t));
-            *filepath_length_slot = strlen(path_buffer);
-
+            memcpy(array_of_filepaths[*internal_count], path_buffer, strlen(path_buffer));
             (*internal_count)++;
         }
     }
 
-    free(path_buffer);
     closedir(dir);
+    return 0;
 }
 
-int ark_list_files(char *flat_array_of_filepaths, size_t *array_of_lengths, uint32_t num_of_filepaths, size_t longest_filepath, char *base_path) {
+int ark_list_files(char **array_of_filepaths, uint32_t num_of_filepaths, char *base_path) {
     uint32_t count = 0;
-    list_files_recursive(flat_array_of_filepaths, array_of_lengths, num_of_filepaths, longest_filepath, base_path, &count);
+    list_files_recursive(array_of_filepaths, num_of_filepaths, base_path, &count);
+    assert(count == num_of_filepaths);
+    return count;
+}
+
+int list_file_sizes_recursive(size_t *array_of_lengths, uint32_t num_of_filepaths, char *base_path, uint32_t *internal_count) {
+    int _;
+    DIR *dir = opendir(base_path);
+    if (dir == NULL) {
+        perror(NULL);
+        return -1;
+    }
+
+    struct dirent *entry = {0};
+    struct stat statbuf = {0};
+    char path_buffer[PATH_MAX];
+    memset(path_buffer, 0, PATH_MAX);
+
+    while ((entry = readdir(dir)) != NULL) {
+        boolean dot_dir = (boolean)(strcmp(entry->d_name, ".") == 0);
+        boolean dot_dot_dir = (boolean)(strcmp(entry->d_name, "..") == 0);
+
+        if (dot_dir || dot_dot_dir) {
+            continue;
+        }
+
+        sprintf(path_buffer, "%s/%s", base_path, entry->d_name);
+        boolean is_dir = (boolean)(stat(path_buffer, &statbuf) == 0 && S_ISDIR(statbuf.st_mode));
+
+        if (is_dir) {
+            _ = list_file_sizes_recursive(array_of_lengths, num_of_filepaths, path_buffer, internal_count);
+            assert(_ != -1);
+        } else {
+            array_of_lengths[*internal_count] = strlen(path_buffer) + 1;
+            (*internal_count)++;
+        }
+    }
+
+    closedir(dir);
+    return 0;
+}
+
+int ark_list_file_sizes(size_t *array_of_lengths, uint32_t num_of_filepaths, char *base_path) {
+    uint32_t count = 0;
+    list_file_sizes_recursive(array_of_lengths, num_of_filepaths, base_path, &count);
     assert(count == num_of_filepaths);
     return count;
 }
