@@ -117,7 +117,7 @@ typedef struct {
   unsigned char token;
   unsigned char type;
   unsigned char version;
-  u64 method;
+  uint64_t method;
   struct HttpSlice tmp_key;
   struct HttpSlice uri;
   struct HttpSlice scratch;

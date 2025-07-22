@@ -10,7 +10,7 @@
 #include "../../include/ark/utils.h"
 
 void bzero(void *p, size_t n) { memset(p, 0, n); }
-int is_digit(int c) { return '0' <= c && c <= '9'; }
+int is_digit(uint8_t c) { return '0' <= c && c <= '9'; }
 
 unsigned long available_ram() {
     struct sysinfo info;
@@ -26,7 +26,7 @@ unsigned long available_ram() {
     return 0;
 }
 
-int ark_file_count(int *count, size_t *max_filepath_length, char *root_path) {
+int ark_count_files(uint32_t *num_of_filepaths, size_t *longest_filepath, char *root_path) {
     int _;
     DIR *dir = opendir(root_path);
     if (dir == NULL) {
@@ -51,14 +51,14 @@ int ark_file_count(int *count, size_t *max_filepath_length, char *root_path) {
         boolean is_dir = (boolean)(stat(path_buffer, &statbuf) == 0 && S_ISDIR(statbuf.st_mode));
 
         if (is_dir) {
-            _ = ark_file_count(count, max_filepath_length, path_buffer);
+            _ = ark_count_files(num_of_filepaths, longest_filepath, path_buffer);
             assert(_ != -1);
         } else {
-            (*count)++;
+            (*num_of_filepaths)++;
             printf("%s\n", path_buffer);
             size_t len = strlen(path_buffer) + 1;
-            if (len > *max_filepath_length) {
-                *max_filepath_length = len;
+            if (len > *longest_filepath) {
+                *longest_filepath = len;
             }
         }
     }
@@ -68,8 +68,8 @@ int ark_file_count(int *count, size_t *max_filepath_length, char *root_path) {
 }
 
 
-void list_files_recursive(char *filepath_array, size_t *filepath_length_array, int filepath_array_length, size_t max_filepath_item_length, char *base_path, int *internal_count);
-void list_files_recursive(char *filepath_array, size_t *filepath_length_array, int filepath_array_length, size_t max_filepath_item_length, char *base_path, int *internal_count) {
+void list_files_recursive(char *filepath_array, size_t *filepath_length_array, uint32_t filepath_array_length, size_t max_filepath_item_length, char *base_path, uint32_t *internal_count);
+void list_files_recursive(char *filepath_array, size_t *filepath_length_array, uint32_t filepath_array_length, size_t max_filepath_item_length, char *base_path, uint32_t *internal_count) {
     DIR *dir = opendir(base_path);
     assert(dir != NULL);
 
@@ -104,14 +104,14 @@ void list_files_recursive(char *filepath_array, size_t *filepath_length_array, i
     closedir(dir);
 }
 
-int ark_list_files(char *filepath_array, size_t *filepath_length_array, int filepath_array_length, size_t max_filepath_item_length, char *base_path) {
-    int count = 0;
-    list_files_recursive(filepath_array, filepath_length_array, filepath_array_length, max_filepath_item_length, base_path, &count);
-    assert(count == filepath_array_length);
+int ark_list_files(char *flat_array_of_filepaths, size_t *array_of_lengths, uint32_t num_of_filepaths, size_t longest_filepath, char *base_path) {
+    uint32_t count = 0;
+    list_files_recursive(flat_array_of_filepaths, array_of_lengths, num_of_filepaths, longest_filepath, base_path, &count);
+    assert(count == num_of_filepaths);
     return count;
 }
 
-size_t ark_file_size(const char *filepath) {
+size_t ark_get_file_size(char *filepath) {
     long file_size = 0;
 
     FILE *file = fopen(filepath, "r");

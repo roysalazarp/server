@@ -54,29 +54,4 @@
 
 int ark_parse_http_request_message(ARKHttpMessage *http_msg, char *raw_http_msg, size_t raw_http_msg_length);
 
-/* const char *GetHttpReason(int); */
-/* const char *GetHttpHeaderName(int); */
-/* int GetHttpHeader(const char *, size_t); */
-/* void DestroyHttpMessage(ARKHttpMessage *); */
-/* void ResetHttpMessage(ARKHttpMessage *, int); */
-/* boolean HeaderHas(ARKHttpMessage *, const char *, int, const char *,
-                   size_t); */
-/* int64_t ParseContentLength(const char *, size_t); */
-/* char *FormatHttpDateTime(char[hasatleast 30], struct tm *); */
-/* boolean ParseHttpRange(const char *, size_t, long, long *, long *); */
-/* int64_t ParseHttpDateTime(const char *, size_t); */
-/* uint64_t ParseHttpMethod(const char *, size_t); */
-/* boolean IsValidHttpToken(const char *, size_t); */
-/* boolean IsValidCookieValue(const char *, size_t); */
-/* boolean IsAcceptablePath(const char *, size_t); */
-/* boolean IsAcceptableHost(const char *, size_t); */
-/* boolean IsAcceptablePort(const char *, size_t); */
-/* boolean IsReasonablePath(const char *, size_t); */
-/* int ParseForwarded(const char *, size_t, uint32_t *, uint16_t *); */
-/* boolean IsMimeType(const char *, size_t, const char *); */
-/* ssize_t Unchunk(struct HttpUnchunker *, char *, size_t, size_t *); */
-/* const char *FindContentType(const char *, size_t); */
-/* boolean IsNoCompressExt(const char *, size_t); */
-/* char *FoldHeader(ARKHttpMessage *, const char *, int, size_t *); */
-
 #endif /* HTTP_INTERNAL_H */

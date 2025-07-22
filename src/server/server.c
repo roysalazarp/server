@@ -1,3 +1,5 @@
+#define _POSIX_C_SOURCE 200112L /** needed for struct addrinfo */
+
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -96,23 +98,23 @@ typedef struct {
                                 * server is made. Used to resume execution from this point once the 
                                 * server response is received. 
                                 */
-        int number_of_requests_sent;
-        int number_of_responses_received;
+        uint32_t number_of_requests_sent;
+        uint32_t number_of_responses_received;
         RawHTTPMessage *responses;
     } fetch;
-    u32 pool_pos;
+    uint32_t pool_pos;
 } HTTPRequestContext;
 
 typedef struct {
     SocketInfo socket_info; /** IMPORTANT: SocketInfo should be the first member in the struct */
-    int pool_pos;
-    int id; /** TODO: Explain why this is necessary */
+    uint32_t pool_pos;
+    uint32_t id; /** TODO: Explain why this is necessary */
 } FetchContext;
 
 #define U32_BITS 32
 
 HTTPRequestContext *request_pool_ptrs[ARK_MAX_QUEUED_HTTP_REQUESTS];
-u32 request_pool_availability_mask[ARK_MAX_QUEUED_HTTP_REQUESTS / U32_BITS];
+uint32_t request_pool_availability_mask[ARK_MAX_QUEUED_HTTP_REQUESTS / U32_BITS];
 
 #define MASK_INDEX(i)       ((i) / U32_BITS)
 #define BIT_POSITION(i)     ((i) % U32_BITS)
@@ -146,7 +148,9 @@ int ark_server_init(uint16_t port) {
     int _; /** Used to check for error */
 
     /* Registers a signal handler to ensure the program exits gracefully */
-    sig_t sig = signal(SIGINT, sigint_handler);
+    
+    void (*sig)(int);
+    sig = signal(SIGINT, sigint_handler);
     assert(sig != SIG_ERR);
 
     int sock_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -190,14 +194,14 @@ int ark_server_init(uint16_t port) {
     return 0;
 }
 
-int ark_send_response(int handle, char *response, size_t response_length) {
+int ark_send_response(uint32_t handle, char *response, size_t response_length) {
     /** TODO: Validate passed arguments */
 
     if (send(request_pool_ptrs[handle]->socket_info.fd, response, response_length, 0) == -1) {}
     close(request_pool_ptrs[handle]->socket_info.fd);
 
     free(request_pool_ptrs[handle]->client_request.buffer);
-    int i = 0;
+    uint32_t i = 0;
     for (i = 0; i < request_pool_ptrs[handle]->fetch.number_of_responses_received; i++) {
         free(request_pool_ptrs[handle]->fetch.responses[i].buffer);
     }
@@ -210,7 +214,7 @@ int ark_send_response(int handle, char *response, size_t response_length) {
     return 0;
 }
 
-int ark_fetch(ArkFetchResponse *response, int handle, ArkFetchTaskDetails *tasks, int tasks_count) {    
+int ark_fetch(ArkFetchResponse *response, uint32_t handle, ArkFetchTaskDetails *tasks, uint32_t tasks_count) {    
     /** TODO: Validate passed arguments */
 
     int _;
@@ -218,7 +222,7 @@ int ark_fetch(ArkFetchResponse *response, int handle, ArkFetchTaskDetails *tasks
     Memory *memory = request_pool_ptrs[handle]->memory;
     request_pool_ptrs[handle]->fetch.responses = memory_alloc(memory, tasks_count * sizeof(RawHTTPMessage));
 
-    int i = 0;
+    uint32_t i = 0;
     for (i = 0; i < tasks_count; i++) {
         request_pool_ptrs[handle]->fetch.responses[i].buffer_size = MAX_BYTES_TO_READ_FROM_SOCKET_BUFFER_AT_ONCE;
         request_pool_ptrs[handle]->fetch.responses[i].buffer = malloc(MAX_BYTES_TO_READ_FROM_SOCKET_BUFFER_AT_ONCE * sizeof(char));
@@ -230,11 +234,12 @@ int ark_fetch(ArkFetchResponse *response, int handle, ArkFetchTaskDetails *tasks
 
     int st = setjmp(request_pool_ptrs[handle]->fetch.resumable_ctx);
     if (st == 0) {
-        int i = 0;
+        uint32_t i = 0;
         for (i = 0; i < tasks_count; i++) {
             ArkFetchTaskDetails task = tasks[i];
 
-            struct addrinfo hints, *res;
+            struct addrinfo hints = {0};
+            struct addrinfo *res = NULL;
 
             memset(&hints, 0, sizeof(hints));
             hints.ai_family = AF_UNSPEC;      /** Use IPv4 or IPv6 */
@@ -318,10 +323,11 @@ int ark_retrive_request(ArkRequest *ark_request) {
 
                     SET_POOL_SLOT_AS_OCCUPIED(0); /** IMPORTANT! Do not use pool slot 0 because of setjmp/longjmp */
                     
-                    int pos = -1;
-                    int mask_index, bit_index;
+                    uint32_t pos;
+                    boolean found = false;
+                    uint32_t mask_index, bit_index;
                     for (mask_index = 0; mask_index < ARK_MAX_QUEUED_HTTP_REQUESTS / U32_BITS; ++mask_index) {
-                        u32 mask_entry = request_pool_availability_mask[mask_index];
+                        uint32_t mask_entry = request_pool_availability_mask[mask_index];
                         
                         /** If all bits are set (0xFFFFFFFF), no free slots here; skip */
                         if (mask_entry != 0xFFFFFFFFU) {
@@ -329,13 +335,14 @@ int ark_retrive_request(ArkRequest *ark_request) {
                                 /** Check if bit is 0 (available) */
                                 if ((mask_entry & (1U << bit_index)) == 0) {
                                     pos = mask_index * U32_BITS + bit_index;
+                                    found = true;
                                     goto found;
                                 }
                             }
                         }
                     }
 
-                    assert(pos != -1);
+                    assert(found);
 
                 found:;
                     SET_POOL_SLOT_AS_OCCUPIED(pos);
@@ -380,7 +387,7 @@ int ark_retrive_request(ArkRequest *ark_request) {
                         
                         if (!ctx->client_request.headers_checked) { /** Checking the HTTP request headers helps us determine how many bytes to expect in the request */
                             boolean has_content_length = false;
-                            u64 content_length = 0;
+                            uint64_t content_length = 0;
                             size_t cursor = 0;
                             while (*((uint32_t *)(&ctx->client_request.buffer[cursor])) != END_OF_HTTP_MESSAGE_HEADERS) {
                                 if (memcmp(&ctx->client_request.buffer[cursor], "Content-Length", strlen("Content-Length")) == 0) {
@@ -411,7 +418,7 @@ int ark_retrive_request(ArkRequest *ark_request) {
 
                             /** At this point we know the length of the headers and we know the Content-Length if there is one */
 
-                            u64 http_method = *(u64 *)ctx->client_request.buffer;
+                            uint64_t http_method = *(uint64_t *)ctx->client_request.buffer;
 
                             if (((__builtin_bswap64(http_method) & MASK_4) == GET)   ||
                                 ((__builtin_bswap64(http_method) & MASK_5) == HEAD)  ||
@@ -484,7 +491,7 @@ int ark_retrive_request(ArkRequest *ark_request) {
                 /** NOTE, For now lets assume that all http responses have a Content-Length and a body */
                 
                 FetchContext *fetch_ctx = (FetchContext *)socket_info;
-                int pos = fetch_ctx->pool_pos;
+                uint32_t pos = fetch_ctx->pool_pos;
                 HTTPRequestContext *request = request_pool_ptrs[pos];
                 RawHTTPMessage *response = &request->fetch.responses[fetch_ctx->id];
 
@@ -498,7 +505,7 @@ int ark_retrive_request(ArkRequest *ark_request) {
                     
                     if (!response->headers_checked) {
                         boolean has_content_length = false;
-                        u64 content_length = 0;
+                        uint64_t content_length = 0;
                         size_t cursor = 0;
                         while (*((uint32_t *)(&response->buffer[cursor])) != END_OF_HTTP_MESSAGE_HEADERS) {
                             if (memcmp(&response->buffer[cursor], "Content-Length", strlen("Content-Length")) == 0) {

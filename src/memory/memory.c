@@ -22,8 +22,8 @@ Memory *memory_setup(void *raw_memory, size_t size) {
 
     memory->size = size;
     memory->start = memory;
-    memory->current = (u8 *)memory + sizeof(Memory);
-    memory->used = (u8 *)memory->current - (u8 *)memory->start;
+    memory->current = (uint8_t *)memory + sizeof(Memory);
+    memory->used = (uint8_t *)memory->current - (uint8_t *)memory->start;
 
     return memory;
 }
@@ -31,12 +31,12 @@ Memory *memory_setup(void *raw_memory, size_t size) {
 void *memory_alloc(Memory *memory, size_t size) {
     assert(!memory->in_use); /** Cannot allocate while the memory is in use! */
 
-    if ((u8 *)memory->current + size > (u8 *)memory->start + memory->size) {
+    if ((uint8_t *)memory->current + size > (uint8_t *)memory->start + memory->size) {
         assert(0); /** Out of memory! */
     }
 
     void *ptr = memory->current;
-    memory->current = (u8 *)memory->current + size;
+    memory->current = (uint8_t *)memory->current + size;
     memory->used += size;
 
     return ptr;
@@ -51,15 +51,15 @@ void *memory_in_use(Memory *memory) {
 
 void memory_out_of_use(Memory *memory, void *tmp) {
     memory->in_use = false;
-    memory->current = (u8 *)tmp;
+    memory->current = (uint8_t *)tmp;
 }
 
-void memory_reset(Memory *memory, u8 *ptr) {
-    size_t set_bytes = (u8 *)memory->current - ptr;
+void memory_reset(Memory *memory, uint8_t *ptr) {
+    size_t set_bytes = (uint8_t *)memory->current - ptr;
     memset(ptr, 0, set_bytes);
 
     memory->current = ptr;
-    memory->used = (u8 *)memory->current - (u8 *)memory->start;
+    memory->used = (uint8_t *)memory->current - (uint8_t *)memory->start;
 }
 
 void memory_free(Memory *memory) {

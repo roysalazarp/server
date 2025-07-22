@@ -6,6 +6,7 @@
 #include "ark/server.h"
 #include "ark/memory.h"
 #include "ark/http.h"
+#include "ark/template.h"
 #include "ark/utils.h"
 
 #define ARK_MAX_HTTP_REQUEST_SIZE MB(300)
@@ -15,41 +16,35 @@
 
 #define PAGE_SIZE KB(4)
 
-typedef struct {
-    String *filepath_array;
-    String *content_array;
-    u32 count;
-} AssetSOA;
-
 int main() {
-    int i;
+    uint32_t i;
 
     ark_server_init((uint16_t)8080);
     
-    int filepath_array_length = 0;
-    size_t max_filepath_item_length = 0;
-    ark_file_count(&filepath_array_length, &max_filepath_item_length, MYDIR);
+    uint32_t num_of_filepaths = 0;
+    size_t longest_filepath = 0;
+    ark_count_files(&num_of_filepaths, &longest_filepath, MYDIR);
     
     Memory *memory = reserve_memory(PAGE_SIZE * 50);
     
-    /** flat refers to null-terminated */
-    char *flat_filepath_array = memory_alloc(memory, filepath_array_length * max_filepath_item_length);
-    size_t *filepath_length_array = memory_alloc(memory, filepath_array_length * sizeof(size_t));
+    /** flat refers to null-terminated filepaths */
+    char *flat_array_of_filepaths = memory_alloc(memory, num_of_filepaths * longest_filepath);
+    size_t *array_of_lengths = memory_alloc(memory, num_of_filepaths * sizeof(size_t));
     
-    ark_list_files(flat_filepath_array, filepath_length_array, filepath_array_length, max_filepath_item_length, "./assets");
+    ark_list_files(flat_array_of_filepaths, array_of_lengths, num_of_filepaths, longest_filepath, MYDIR);
     
-    String *filepath_array = memory_alloc(memory, filepath_array_length * sizeof(String));
-    for (i = 0; i < filepath_array_length; i++) {
-        filepath_array[i].data = flat_filepath_array + (i * max_filepath_item_length);
-        filepath_array[i].length = *(filepath_length_array + (i * sizeof(size_t)));
+    String *array_of_filepaths = memory_alloc(memory, num_of_filepaths * sizeof(String));
+    for (i = 0; i < num_of_filepaths; i++) {
+        array_of_filepaths[i].data = flat_array_of_filepaths + (i * longest_filepath);
+        array_of_filepaths[i].length = *(array_of_lengths + (i * sizeof(size_t)));
     }
 
-    String *file_content_array = memory_alloc(memory, filepath_array_length * sizeof(String));
+    String *file_content_array = memory_alloc(memory, num_of_filepaths * sizeof(String));
 
-    for (i = 0; i < filepath_array_length; i++) {
-        char *filepath = filepath_array[i].data;
+    for (i = 0; i < num_of_filepaths; i++) {
+        char *filepath = array_of_filepaths[i].data;
         
-        size_t file_size = ark_file_size(filepath);
+        size_t file_size = ark_get_file_size(filepath);
         char *file_content = memory_alloc(memory, file_size);
             
         FILE *file = fopen(filepath, "r");
@@ -61,12 +56,7 @@ int main() {
         file_content_array[i].length = file_size;
     }
 
-    AssetSOA assets_soa = {0};
-    assets_soa.filepath_array = filepath_array;
-    assets_soa.content_array = file_content_array;
-    assets_soa.count = filepath_array_length;
-
-    printf("\n");
+    ark_validate_components(array_of_filepaths, file_content_array, num_of_filepaths);
     
     int code;
     while (1) {
@@ -83,28 +73,6 @@ int main() {
                           "Connection: close\r\n"
                           "\r\n"
                           "<html><body><h1>Hello, World!</h1></body></html>\n";
-
-        /*
-        ArkFetchTaskDetails tasks[2] = {0};
-
-        char *domain_name = "localhost";
-        char *request = "GET / HTTP/1.1\r\nHost: www.example.com\r\nConnection: close\r\n\r\n";
-        
-        tasks[0].domain_name = domain_name;
-        tasks[0].domain_name_length = strlen(domain_name);
-        tasks[0].request = request;
-        tasks[0].request_length = strlen(request);
-        tasks[0].port = 3000;
-        
-        tasks[1].domain_name = domain_name;
-        tasks[1].domain_name_length = strlen(domain_name);
-        tasks[1].request = request;
-        tasks[1].request_length = strlen(request);
-        tasks[1].port = 3000;
-
-        ArkFetchResponse r;
-        ark_fetch(&r, new_request.handle, tasks, 2);
-        */
 
         ark_send_response(new_request.handle, response, strlen(response));
     }

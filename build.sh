@@ -5,7 +5,7 @@ set -e
 
 # Compiler and flags
 CC=gcc
-CFLAGS="-g -DDEBUG=1 -Wall -Wextra -Werror -pedantic -Wno-unused-parameter -Wno-unused-but-set-variable -Wno-declaration-after-statement -Wno-unused-variable -Wno-long-long -Wno-missing-field-initializers -Wno-implicit-function-declaration"
+CFLAGS="-std=c89 -g -DDEBUG=1 -Wall -Wextra -Werror -pedantic -Wno-unused-parameter -Wno-unused-but-set-variable -Wno-declaration-after-statement -Wno-unused-variable -Wno-long-long -Wno-missing-field-initializers -Wno-implicit-function-declaration"
 
 # Create output directories if they don't exist
 mkdir -p lib
@@ -25,6 +25,10 @@ $CC -shared lib/http.o -o lib/libark_http.so
 # Memory module
 $CC $CFLAGS -fPIC -c src/memory/memory.c -o lib/memory.o
 $CC -shared lib/memory.o -o lib/libark_memory.so
+
+# Template module
+$CC $CFLAGS -fPIC -c src/template/template.c -o lib/template.o
+$CC -shared lib/template.o -o lib/libark_template.so
 
 # Server module
 $CC $CFLAGS -fPIC -c src/server/server.c -o lib/server.o
@@ -61,7 +65,7 @@ $CC $CFLAGS -I./ArkSDK/include test/test_server.c \
 
 SRC_FILES=$(find ./app/src -name "*.c")
 $CC $CFLAGS $SRC_FILES -I./ArkSDK/include \
-    -L./ArkSDK/lib -lark_server -lark_memory -lark_http -lark_utils -o ./app/bin
+    -L./ArkSDK/lib -lark_server -lark_memory -lark_http -lark_utils -lark_template -o ./app/bin
 
 echo "🚀 Running test..."
 LD_LIBRARY_PATH=$(pwd)/ArkSDK/lib ./test/test_json

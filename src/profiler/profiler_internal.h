@@ -6,24 +6,24 @@
 /** IMPORTANT: The profiler does NOT support nested blocks yet */
 
 typedef struct {
-    u64 tsc_elapsed;
-    u64 hit_count;
+    uint64_t tsc_elapsed;
+    uint64_t hit_count;
     const char *label;
 } ProfileAnchor;
 
 typedef struct {
     const char *label;
-    u64 start_tsc;
-    u32 anchor_index;
+    uint64_t start_tsc;
+    uint32_t anchor_index;
 } ProfileBlock;
 
 typedef struct {
     ProfileAnchor anchors[4096];
-    u64 start_tsc;
-    u64 end_tsc;
+    uint64_t start_tsc;
+    uint64_t end_tsc;
 } Profiler;
 
-ProfileBlock profile_block_scope_start(const char *label, u32 anchor_index);
+ProfileBlock profile_block_scope_start(const char *label, uint32_t anchor_index);
 void profile_block_scope_end(ProfileBlock *block);
 
 /* clang-format off */

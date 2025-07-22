@@ -43,7 +43,10 @@
         "socket.h": "c",
         "features.h": "c",
         "struct_osockaddr.h": "c",
-        "types.h": "c"
+        "types.h": "c",
+        "inet.h": "c",
+        "stdint.h": "c",
+        "stdint-gcc.h": "c"
     },
     "C_Cpp.errorSquiggles": "enabled"
 }
