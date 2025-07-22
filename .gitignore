@@ -1,4 +1,3 @@
-lib
 ArkSDK
 test/*
 !test/*.c

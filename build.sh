@@ -8,47 +8,36 @@ CC=gcc
 CFLAGS="-std=c89 -g -DDEBUG=1 -Wall -Wextra -Werror -pedantic -Wno-unused-parameter -Wno-unused-but-set-variable -Wno-declaration-after-statement -Wno-unused-variable -Wno-long-long -Wno-missing-field-initializers -Wno-implicit-function-declaration"
 
 # Create output directories if they don't exist
-mkdir -p lib
 mkdir -p ArkSDK/include/ark
 mkdir -p ArkSDK/lib
 
 echo "🔧 Compiling dynamic libraries..."
 
 # JSON module
-$CC $CFLAGS -fPIC -c src/json/json.c -o lib/json.o
-$CC -shared lib/json.o -o lib/libark_json.so
+$CC $CFLAGS -fPIC -shared src/json/json.c -o ArkSDK/lib/libark_json.so
 
 # HTTP module
-$CC $CFLAGS -fPIC -c src/http/http.c -o lib/http.o
-$CC -shared lib/http.o -o lib/libark_http.so
+$CC $CFLAGS -fPIC -shared src/http/http.c -o ArkSDK/lib/libark_http.so
 
 # Memory module
-$CC $CFLAGS -fPIC -c src/memory/memory.c -o lib/memory.o
-$CC -shared lib/memory.o -o lib/libark_memory.so
+$CC $CFLAGS -fPIC -shared src/memory/memory.c -o ArkSDK/lib/libark_memory.so
 
 # Template module
-$CC $CFLAGS -fPIC -c src/template/template.c -o lib/template.o
-$CC -shared lib/template.o -o lib/libark_template.so
+$CC $CFLAGS -fPIC -shared src/template/template.c -o ArkSDK/lib/libark_template.so
 
 # Server module
-$CC $CFLAGS -fPIC -c src/server/server.c -o lib/server.o
-$CC -shared lib/server.o -o lib/libark_server.so
+$CC $CFLAGS -fPIC -shared src/server/server.c -o ArkSDK/lib/libark_server.so
 
 # Profiler module
-$CC $CFLAGS -fPIC -c src/profiler/profiler.c -o lib/profiler.o
-$CC -shared lib/profiler.o -o lib/libark_profiler.so
+$CC $CFLAGS -fPIC -shared src/profiler/profiler.c -o ArkSDK/lib/libark_profiler.so
 
 # Utils module
-$CC $CFLAGS -fPIC -c src/utils/utils.c -o lib/utils.o
-$CC -shared lib/utils.o -o lib/libark_utils.so
+$CC $CFLAGS -fPIC -shared src/utils/utils.c -o ArkSDK/lib/libark_utils.so
 
 echo "📦 Packaging SDK..."
 
 # Copy public headers to SDK include folder
 cp include/ark/*.h ArkSDK/include/ark/
-
-# Copy shared libraries to SDK lib folder
-cp lib/*.so ArkSDK/lib/
 
 echo "✅ Build and packaging complete!"
 
