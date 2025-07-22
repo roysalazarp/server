@@ -5,6 +5,7 @@
 #include <dirent.h>
 #include <limits.h>
 #include <stdlib.h>
+#include <assert.h>
 
 #include "../../include/ark/shared.h"
 #include "../../include/ark/utils.h"

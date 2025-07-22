@@ -1,5 +1,6 @@
 #include <string.h>
 #include <sys/mman.h>
+#include <assert.h>
 
 #include "memory_internal.h"
 #include "../../include/ark/memory.h"

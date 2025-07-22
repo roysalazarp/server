@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
+#include <assert.h>
 
 #include "ark/shared.h"
 #include "ark/server.h"
@@ -53,7 +54,7 @@ int main() {
         array_of_file_contents[i] = file_content;
     }
 
-   ark_validate_components(array_of_filepaths, array_of_file_contents, num_of_filepaths);
+    ark_validate_components(array_of_filepaths, array_of_file_contents, num_of_filepaths);
     
     int code;
     while (1) {

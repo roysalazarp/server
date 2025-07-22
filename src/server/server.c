@@ -13,6 +13,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
+#include <assert.h>
 
 #include "../../include/ark/shared.h"
 #include "../../include/ark/server.h"

@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <assert.h>
 
 #include "http_internal.h"
 #include "../../include/ark/utils.h"
