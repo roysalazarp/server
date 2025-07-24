@@ -17,6 +17,33 @@
 #define VAL_IDENTIFIER "x-val"
 #define FOR_IDENTIFIER "x-for"
 
+#define HTML_ATTR_START       0
+#define HTML_ATTR_START_KEY   1
+#define HTML_ATTR_KEY         2
+#define HTML_ATTR_EQUALS      3
+#define HTML_ATTR_START_VALUE 4
+#define HTML_ATTR_VALUE       5
+#define HTML_ATTR_END         6
+
+const char html_attr_key_token[256] = {
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  /* 0x00 */
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  /* 0x10 */
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0,  /* 0x20 */ /*│             -  │*/
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0,  /* 0x30 */ /*│0123456789      │*/
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  /* 0x40 */ /*│                │*/
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  /* 0x50 */ /*│                │*/
+    0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  /* 0x60 */ /*│ abcdefghijklmno│*/
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0,  /* 0x70 */ /*│pqrstuvwxyz     │*/
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  /* 0x80 */
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  /* 0x90 */
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  /* 0xa0 */
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  /* 0xb0 */
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  /* 0xc0 */
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  /* 0xd0 */
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  /* 0xe0 */
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  /* 0xf0 */
+};
+
 typedef enum {
     TOKEN_EOF = 0,
 
@@ -45,7 +72,7 @@ typedef struct {
 
 typedef struct {
     String file_path;
-    String content;
+    String file_content;
     uint32_t cursor;
     uint32_t line_number;
 } Lexer;
@@ -95,8 +122,12 @@ typedef struct {
     uint8_t count;
 } TagStack;
 
-#define MAX_NAME_LENGTH 32          /* NOTE: This could also be defined by the framework user */
-typedef char Name[MAX_NAME_LENGTH]; /* 2 of these fit nicely in a 64 bytes cache line */
+
+#ifndef ARK_MAX_TEMPLATE_NAME_LENGTH
+#define ARK_MAX_TEMPLATE_NAME_LENGTH 32
+#endif
+
+typedef char Name[ARK_MAX_TEMPLATE_NAME_LENGTH]; /* 2 of these fit nicely in a 64 bytes cache line */
 
 typedef struct {
     Name *names;
@@ -143,15 +174,19 @@ typedef struct {
     size_t pos_start;
 } ComplComp;
 
+#define HTML_EXTENSION           0x2E68746D6C000000 /* ".html" */
+
 boolean is_html_path(char *path, size_t path_length) {
-    if (strncmp(path + path_length - strlen(".html"), ".html", strlen(".html")) == 0) {
+    uint64_t ext = *(uint64_t *)(path + path_length - 5 /* .html */);
+
+    if ((__builtin_bswap64(ext) & MASK_5) == HTML_EXTENSION) {
         return true;
     }
 
     return false;
 }
 
-char *peek(Lexer *lexer) { return &lexer->content.data[lexer->cursor]; }
+char *peek(Lexer *lexer) { return &lexer->file_content.data[lexer->cursor]; }
 void advance_cursor(Lexer *lexer) { lexer->cursor += 1; }
 
 TokenKind get_token_kind(String identifier) {
@@ -172,139 +207,9 @@ TokenKind get_token_kind(String identifier) {
     }
 }
 
-Attribute get_next_attribute(Lexer *lexer) {
-    /*
-     Typically, we encounter HTML attributes in a format like this:
-     <x-foo name = " value   " ...
-     However, attributes may also be formatted inconsistently, for example:
-     <x-foo  name =  " value   " ...
-    
-     If this is the first HTML attribute we are retrieveing we would be possition as follows:
-     <x-foo  name  = " value   " ...
-     ______^________________________
-     otherwise we would be possition after the double quotes (") of the last HTML
-     attribute we processed, like this:
-     <x-foo  name  = " value   " ...
-     ___________________________^___
-    
-     Let's assume we are about to process the first HTML attribute, the lexer is positioned as follows:
-     <x-foo  name  = " value   " ...
-     ______^________________________
-    
-     Our goal is to extract the first HTML attribute (name and value) we encounter,
-     which ending is indicated by double quote ("):
-     <x-foo  name  = " value   " ...
-     ______^^^^^^^^^^^^^^^^^^^^^____
-    */
-
-    Attribute attribute = {0};
-
-    char *c = peek(lexer);
-
-    /*
-     We start by getting rid of possible initial whitespaces:
-     <x-foo  name  = " value   " ...
-     ______^^______________________
-    */
-    while (isspace(*c)) {
-        advance_cursor(lexer);
-        c = peek(lexer);
-    }
-
-    /*
-     If this function is called after processing the last attribute,
-     we might be positioned here:
-     <x-foo  name  = " value   " name="value"    >
-     ________________________________________^____
-    
-     But as we already skip the witespaces in the previous step,
-     we would now be here:
-     <x-foo  name  = " value   " name="value"    >
-     ____________________________________________^
-    
-     (For now, we assume only opening tags, not self-closing ones.)
-    */
-    if (*c == '>' || (*c == '/' && *(c + 1) == '>')) {
-        return attribute;
-    }
-
-    /*
-     At this point we should be positioned at the start of the attribute name:
-     <x-foo  name  = " value   " ...
-     ________^______________________
-    */
-    attribute.name.data = c;
-
-    /*
-     Advance past the attribute name to here:
-     <x-foo  name  = " value   " ...
-     ____________^__________________
-    */
-    while (*c != '>' && !isspace(*c) && *c != '=') {
-        attribute.name.length += 1;
-
-        advance_cursor(lexer);
-        c = peek(lexer);
-    }
-
-    /*
-     Skip possible white spaces again:
-     <x-foo  name  = " value   " ...
-     ____________^^_________________
-    */
-    while (*c != '>' && isspace(*c)) {
-        advance_cursor(lexer);
-        c = peek(lexer);
-    }
-
-    /*
-     At this point, we should be at the '=' character:
-     <x-foo  name  = " value   " ...
-     ______________^________________
-    */
-    assert(*c == '=');
-    advance_cursor(lexer); /* skip '=' */
-    c = peek(lexer);
-
-    /** you get the point by now, same logic applies in the code bellow */
-
-    while (*c != '>' && isspace(*c)) {
-        advance_cursor(lexer);
-        c = peek(lexer);
-    }
-
-    assert(*c == '"');
-    advance_cursor(lexer); /* skip double quotes (") */
-    c = peek(lexer);
-
-    while (*c != '>' && isspace(*c)) {
-        advance_cursor(lexer);
-        c = peek(lexer);
-    }
-
-    attribute.value.data = c;
-
-    while (*c != '>' && *c != '"') {
-        attribute.value.length += 1;
-
-        advance_cursor(lexer);
-        c = peek(lexer);
-    }
-
-    while (*c != '>' && isspace(*c)) {
-        advance_cursor(lexer);
-        c = peek(lexer);
-    }
-
-    assert(*c == '"');
-    advance_cursor(lexer); /* skip double quotes (") */
-
-    return attribute;
-}
-
 Token get_next_token(Lexer *lexer) {
     Token token = {0};
-    while (lexer->cursor < lexer->content.length) {
+    while (lexer->cursor < lexer->file_content.length) {
         char *c = peek(lexer);
 
         if (*c == 'x' && *(c + 1) == '-') {
@@ -342,7 +247,7 @@ Token get_next_token(Lexer *lexer) {
                 token.identifier = identifier;
                 token.kind = get_token_kind(token.identifier);
 
-                lexer->cursor = (identifier.data + identifier.length) - lexer->content.data;
+                lexer->cursor = (identifier.data + identifier.length) - lexer->file_content.data;
 
                 return token;
             }
@@ -373,7 +278,7 @@ Token get_next_token(Lexer *lexer) {
                 token.tag.type = TAG_CLOSING;
                 token.kind = get_token_kind(identifier);
 
-                lexer->cursor = (identifier.data + identifier.length) - lexer->content.data;
+                lexer->cursor = (identifier.data + identifier.length) - lexer->file_content.data;
 
                 return token;
             }
@@ -397,7 +302,7 @@ Token get_next_token(Lexer *lexer) {
                         token.identifier = identifier;
                         token.kind = TOKEN_PLACEHOLDER;
 
-                        lexer->cursor = (identifier.data + identifier.length + 1) - lexer->content.data;
+                        lexer->cursor = (identifier.data + identifier.length + 1) - lexer->file_content.data;
 
                         return token;
                     }
@@ -845,26 +750,6 @@ void print_components_soa(ComponentSOA *components_soa, uint32_t i) {
     printf("\n");
 }
 
-AttributeArray get_attributes(Memory *memory, Lexer *lexer) {
-    AttributeArray attribute_array = {0};
-
-    uint32_t cursor = lexer->cursor;
-
-    Attribute *attributes = memory_alloc(memory, sizeof(Attribute));
-    *attributes = get_next_attribute(lexer);
-    attribute_array.attributes = attributes;
-    while (attributes->name.data != NULL) {
-        attribute_array.count += 1;
-
-        attributes = memory_alloc(memory, sizeof(Attribute));
-        *attributes = get_next_attribute(lexer);
-    }
-
-    lexer->cursor = cursor; /* restore cursor because main parser loop needs to check for tokens */
-
-    return attribute_array;
-}
-
 void print_no_attribute_allowed_error(String content, char *error, String file_path, String identifier, uint32_t line_number, Attribute *attribute) {
     char *content_end = content.data + content.length;
     printf("Invalid attribute for %.*s tag, only x-component tag can have attributes other than the name attribute:\n", (int)identifier.length, identifier.data);
@@ -894,8 +779,8 @@ Lexer lexer_init(char *file_path, size_t file_path_length, char *content, size_t
     Lexer lexer = {0};
     lexer.file_path.data = file_path;
     lexer.file_path.length = file_path_length;
-    lexer.content.data = content;
-    lexer.content.length = content_length;
+    lexer.file_content.data = content;
+    lexer.file_content.length = content_length;
     lexer.line_number = 1;
 
     return lexer;
@@ -904,92 +789,112 @@ Lexer lexer_init(char *file_path, size_t file_path_length, char *content, size_t
 int ark_validate_components(char **array_of_filepaths, char **file_content_array, uint32_t array_length) {
     uint32_t i;
 
-    ComponentSOA components_soa = {0};
+    Memory *memory = reserve_memory(PAGE_SIZE * 100);
 
-    uint32_t components_count = 0;
+    size_t mask_size = array_length / U32_BITS;
+    mask_size = mask_size < 1 ? 1 : mask_size; /* ensure minimum */
 
-    /* Count amount of component across all html files: needed for allocations */
-    /* NOTE: This can probably benefit greatly from SIMD. */
+    uint32_t *is_html_file_mask = memory_alloc(memory, mask_size * sizeof(uint32_t));
+
     for (i = 0; i < array_length; i++) {
-        if (!is_html_path(array_of_filepaths[i], strlen(array_of_filepaths[i]))) {
-            continue;
-        }
-
-        Lexer lexer = lexer_init(array_of_filepaths[i], strlen(array_of_filepaths[i]), file_content_array[i], strlen(file_content_array[i]));
-
-        String opening_tag = {0};
-        uint32_t opening_tag_line_number = 0;
-
-        while (lexer.cursor < lexer.content.length) {
-            char *c = peek(&lexer);
-            if (strncmp("<x-component-def ", c, strlen("<x-component-def ")) == 0) {
-                if (opening_tag.data) {
-                    char error[] = "x-component-def can't ever be a child tag, it must always be placed at the top level. "
-                                   "If you think you already placed x-component-def at the top level, check that you did't "
-                                   "leave open a x-component-def earlier in the file";
-                    print_tag_error(lexer.content, error, lexer.file_path, opening_tag, opening_tag_line_number);
-
-                    assert(0); /* TODO: remove */
-                    return -1;
-                }
-
-                opening_tag.data = peek(&lexer) + 1;
-                opening_tag.length = strlen("x-component-def");
-                opening_tag_line_number = lexer.line_number;
-
-                components_count += 1;
-            }
-
-            if (strncmp("</x-component-def>", c, strlen("</x-component-def>")) == 0) {
-                memset(&opening_tag, 0, sizeof(opening_tag));
-            }
-
-            if (*c == '\n') {
-                lexer.line_number += 1;
-            }
-
-            advance_cursor(&lexer);
+        if (is_html_path(array_of_filepaths[i], strlen(array_of_filepaths[i]))) {
+            TURN_ON_U32_BIT(is_html_file_mask, i);
         }
     }
 
-    Memory *memory = reserve_memory(PAGE_SIZE * 100);
-
-    components_soa.names = memory_alloc(memory, sizeof(Name) * components_count);
-    components_soa.components = memory_alloc(memory, sizeof(String) * components_count);
-    components_soa.ast_nodes = memory_alloc(memory, sizeof(ASTNode *) * components_count);
-    components_soa.placeholders_soa = memory_alloc(memory, sizeof(PlaceholderSOA *) * components_count);
-    components_soa.imports_soa = memory_alloc(memory, sizeof(ImportSOA *) * components_count);
-    components_soa.slots_soa = memory_alloc(memory, sizeof(SlotSOA *) * components_count);
-    components_soa.file_paths = memory_alloc(memory, sizeof(String) * components_count);
-    components_soa.contents = memory_alloc(memory, sizeof(String) * components_count);
-
-    uint32_t *placeholder_amounts = memory_alloc(memory, sizeof(uint32_t) * components_count);
-
-    uint32_t component_index = 0;
-    boolean inside_component = false;
-
-    uint32_t tag_stack_max = 0;
-    uint32_t tag_stack_count = 0;
-
-    /*
-     Count amount of placeholders per component: needed for allocations
-     Count amount of xtags: opening (<x-), closing (</x-), and self-closing (<x-) needed to determine tag_stack_max.
-     NOTE: This can probably benefit greatly from SIMD.
-    */
+    uint32_t components_count = 0;
     for (i = 0; i < array_length; i++) {
-        if (!is_html_path(array_of_filepaths[i], strlen(array_of_filepaths[i]))) {
+        if (IS_U32_BIT_OFF(is_html_file_mask, i)) {
             continue;
         }
 
-        Lexer lexer = lexer_init(array_of_filepaths[i], strlen(array_of_filepaths[i]), file_content_array[i], strlen(file_content_array[i]));
+        {   /* 
+            A file may contain multiple components. Check that component 
+            declarations are not nested and that they are properly closed. 
+            For example:
 
-        while (lexer.cursor < lexer.content.length) {
+            Valid
+            <x-component-def name="Button">
+                <!-- component definition -->
+            </x-component-def>
+
+            Invalid
+            <x-component-def name="Button">
+                <x-component-def name="Nested"> <!-- Invalid: nested declaration -->
+                </x-component-def>
+            </x-component-def>
+            */
+
+            char *file_path = array_of_filepaths[i];
+            char *file_content = file_content_array[i];
+    
+            Lexer lexer = lexer_init(file_path, strlen(file_path), file_content, strlen(file_content));
+    
+            String opening_tag = {0};
+            uint32_t opening_tag_line_number = 0; /* Used for error reporting */
+    
+            while (lexer.cursor < lexer.file_content.length) {
+                char *c = peek(&lexer);
+                if (strncmp("<x-component-def ", c, strlen("<x-component-def ")) == 0) {
+                    if (opening_tag.data) {
+                        char error[] = "x-component-def can't ever be a child tag, it must always be placed at the top level. "
+                                       "If you think you already placed x-component-def at the top level, check that you did't "
+                                       "leave open a x-component-def earlier in the file";
+                        print_tag_error(lexer.file_content, error, lexer.file_path, opening_tag, opening_tag_line_number);
+    
+                        return -1;
+                    }
+    
+                    advance_cursor(&lexer); /* skip '<' */
+                    opening_tag.data = peek(&lexer);
+                    opening_tag.length = strlen("x-component-def");
+                    opening_tag_line_number = lexer.line_number;
+    
+                    components_count += 1;
+                } else if (strncmp("</x-component-def>", c, strlen("</x-component-def>")) == 0) {
+                    memset(&opening_tag, 0, sizeof(opening_tag));
+                } else if (*c == '\n') {
+                    lexer.line_number += 1;
+                }
+    
+                advance_cursor(&lexer);
+            }
+        }
+    }
+    
+    /*
+     Used to store the amount of %placeholders% each component 
+     contains, this info will later be needed for allocations.
+     */
+    uint32_t *placeholder_amounts = memory_alloc(memory, sizeof(uint32_t) * components_count); 
+
+    uint32_t component_index = 0; 
+    boolean inside_component = false;
+
+    /*
+     Used to store the max amount of xtags: 
+     opening (<x-), closing (</x-), and self-closing (<x-)
+     This info will later be used to allocate a stack 
+     that assists in creating the component AST.
+     */
+    uint32_t tag_stack_max = 0; 
+    uint32_t tag_stack_count = 0;
+
+    for (i = 0; i < array_length; i++) {
+        if (IS_U32_BIT_OFF(is_html_file_mask, i)) {
+            continue;
+        }
+
+        char *file_path = array_of_filepaths[i];
+        char *file_content = file_content_array[i];
+
+        Lexer lexer = lexer_init(file_path, strlen(file_path), file_content, strlen(file_content));
+
+        while (lexer.cursor < lexer.file_content.length) {
             char *c = peek(&lexer);
             if (strncmp("<x-component-def ", c, strlen("<x-component-def ")) == 0) {
                 inside_component = true;
-            }
-
-            if (strncmp("</x-component-def>", c, strlen("</x-component-def>")) == 0) {
+            } else if (strncmp("</x-component-def>", c, strlen("</x-component-def>")) == 0) {
                 component_index += 1;
                 inside_component = false;
 
@@ -999,19 +904,21 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
 
                 tag_stack_count = 0;
             }
-
+            
             if (inside_component) {
                 /*
                  Check that we are not immediately closing the placeholder with no name, like '%%',
-                 in which case it wouldn't be considered a valid placeholder. A placeholder can be
-                 placed anywhere within the component definition.
+                 in which case it wouldn't be considered a valid placeholder. 
+                 
+                 ATTENTIONS: A placeholder may be placed anywhere within the component definition.
                 */
                 if (*c == '%' && *(c + 1) != '%') {
                     uint32_t placeholder_name_length = 0;
 
+                    char *end = file_content + strlen(file_content);
+
                     char *p = c + 1;
-                    while (*p != '\0') { /* NOTE: This check is wrong! I should check that I am not going over 
-                                            lexer->content.length not the end of a null terminated string */
+                    while (p != end) {
                         if (isspace(*p)) {
                             /*
                              It wasn't a placeholder after all, because the placeholder format 
@@ -1021,7 +928,10 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                         }
 
                         if (*p == '%') {
-                            assert(placeholder_name_length < MAX_NAME_LENGTH); /* TODO: Print a usefull error for the user */
+                            if (placeholder_name_length > ARK_MAX_TEMPLATE_NAME_LENGTH) {
+                                /* TODO: Print usefull error message */
+                                return -1;
+                            }
 
                             placeholder_amounts[component_index] += 1;
                             break;
@@ -1034,7 +944,8 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
 
                 /*
                  This simple check could give false positives, but it doesn't matter much,
-                 as it would only result in a slightly larger tag_stack_max that won't be fully used.
+                 as it would just make us allocate a few extra slots in the stack that we 
+                 wouldn't use.
                 */
                 if (strncmp("<x-", c, strlen("<x-")) == 0 || strncmp("</x-", c, strlen("</x-")) == 0) {
                     tag_stack_count += 1;
@@ -1049,32 +960,42 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
         }
     }
 
+    ComponentSOA components_soa = {0};
+    components_soa.names = memory_alloc(memory, sizeof(Name) * components_count);
+    components_soa.components = memory_alloc(memory, sizeof(String) * components_count);
+    components_soa.ast_nodes = memory_alloc(memory, sizeof(ASTNode *) * components_count);
+    components_soa.placeholders_soa = memory_alloc(memory, sizeof(PlaceholderSOA *) * components_count);
+    components_soa.imports_soa = memory_alloc(memory, sizeof(ImportSOA *) * components_count);
+    components_soa.slots_soa = memory_alloc(memory, sizeof(SlotSOA *) * components_count);
+    components_soa.file_paths = memory_alloc(memory, sizeof(String) * components_count);
+    components_soa.contents = memory_alloc(memory, sizeof(String) * components_count);
+
     for (i = 0; i < components_count; i++) {
         components_soa.placeholders_soa[i] = memory_alloc(memory, sizeof(PlaceholderSOA));
         components_soa.placeholders_soa[i]->names = memory_alloc(memory, sizeof(Name) * placeholder_amounts[i]);
     }
 
-    TagStack tag_stack = {0}; /* used to keep track of open xtags, ensuring proper closing order. */
+    TagStack tag_stack = {0}; /* Used to keep track of open xtags, ensuring proper closing order. */
     tag_stack.data = memory_alloc(memory, sizeof(TagStackElement) * tag_stack_max);
 
     NodeArray node_array = {0}; /* used to temporarily hold nodes while parsing component template and later used to construct the component AST. */
     node_array.data = memory_alloc(memory, sizeof(Node *) * tag_stack_max);
 
     for (i = 0; i < array_length; i++) {
-        if (!is_html_path(array_of_filepaths[i], strlen(array_of_filepaths[i]))) {
+        if (IS_U32_BIT_OFF(is_html_file_mask, i)) {
             continue;
         }
 
-        Lexer lexer = lexer_init(array_of_filepaths[i], strlen(array_of_filepaths[i]), file_content_array[i], strlen(file_content_array[i]));
+        char *file_path = array_of_filepaths[i];
+        char *file_content = file_content_array[i];
+
+        Lexer lexer = lexer_init(file_path, strlen(file_path), file_content, strlen(file_content));
 
         Token token = get_next_token(&lexer);
         while (token.kind != TOKEN_EOF) {
             if (token.kind == TOKEN_INVALID) {
-                /*
-                 TODO: What do we do in this case?
-                 assert(0);
-                */
-                goto proceed_to_next_token;
+                /* TODO: Print usefull error message */
+                return -1;
             }
 
             if (token.kind == TOKEN_PLACEHOLDER) {
@@ -1085,7 +1006,149 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                 goto proceed_to_next_token;
             }
 
-            AttributeArray attribute_array = get_attributes(memory, &lexer);
+            AttributeArray attribute_array = {0};
+            
+            {   /* Attr Parser */
+                size_t curs = lexer.cursor;
+                uint8_t c = 0; /** ASCII character */
+                uint8_t tk = 0;
+                size_t str_start = 0;
+                uint8_t quotation = 0;
+                while (true) {
+                    String key = {0};
+                    String value = {0};
+    
+                    for (;;) {
+                        c = lexer.file_content.data[curs] & 255;
+                        switch (tk) {
+                            case HTML_ATTR_START: {
+                                for (;;) {
+                                    if (c == '>') {
+                                        tk = HTML_ATTR_END;
+                                        break;
+                                    } else if (html_attr_key_token[c]) {
+                                        tk = HTML_ATTR_START_KEY;
+                                        break;
+                                    } else if (c == ' ') {
+                                        curs++;
+                                        c = lexer.file_content.data[curs] & 255;
+                                    } else {
+                                        assert(0);
+                                        return -1;
+                                    }
+                                }
+                                break;
+                            }
+                            case HTML_ATTR_START_KEY: {
+                                for (;;) {
+                                    if (html_attr_key_token[c]) {
+                                        key.data = &lexer.file_content.data[curs];
+                                        tk = HTML_ATTR_KEY;
+                                        str_start = curs;
+                                        break;
+                                    } else if (c == ' ') {
+                                        curs++;
+                                        c = lexer.file_content.data[curs] & 255;
+                                    } else {
+                                        assert(0);
+                                        return -1;
+                                    }
+                                }
+                                break;
+                            }
+                            case HTML_ATTR_KEY: {
+                                for (;;) {
+                                    if (c == ' ' || c == '=') {
+                                        key.length = curs - str_start;
+                                        tk = HTML_ATTR_EQUALS;
+                                        break;
+                                    } else if (html_attr_key_token[c]) {
+                                        curs++;
+                                        c = lexer.file_content.data[curs] & 255;
+                                    }   else {
+                                        assert(0);
+                                        return -1;
+                                    }
+                                }
+                                break;
+                            }
+                            case HTML_ATTR_EQUALS: {
+                                for (;;) {
+                                    if (c == '=') {
+                                        curs++; /* skip '=' */
+                                        tk = HTML_ATTR_START_VALUE;
+                                        break;
+                                    } else if (c == ' ') {
+                                        curs++;
+                                        c = lexer.file_content.data[curs] & 255;
+                                    } else {
+                                        assert(0);
+                                        return -1;
+                                    }
+                                }
+                                break;
+                            }
+                            case HTML_ATTR_START_VALUE: {
+                                for (;;) {
+                                    if (c == '"' ||  c == '\'') {
+                                        quotation = c;
+                                        curs++; /* pass quotation */
+                                        value.data = &lexer.file_content.data[curs];
+                                        tk = HTML_ATTR_VALUE;
+                                        str_start = curs;
+                                        break;
+                                    } else if (c == ' ') {
+                                        curs++;
+                                        c = lexer.file_content.data[curs] & 255;
+                                    }   else {
+                                        assert(0);
+                                        return -1;
+                                    }
+                                }
+                                break;
+                            }
+                            case HTML_ATTR_VALUE: {
+                                char prev = lexer.file_content.data[curs - 1] & 255;
+                                for (;;) {
+                                    if (c == quotation && prev != '\\') {
+                                        value.length = curs - str_start;
+                                        curs++;
+                                        tk = HTML_ATTR_END;
+                                        break;
+                                    } else if (c & 255) {
+                                        prev = c;
+                                        curs++;
+                                        c = lexer.file_content.data[curs] & 255;
+                                    }   else {
+                                        assert(0);
+                                        return -1;
+                                    }
+                                }
+                                break;
+                            }
+                            case HTML_ATTR_END: {
+                                goto exit_attr_parsing;
+                            }
+                        }
+                    }
+                    
+                exit_attr_parsing:;
+    
+                    if (key.data == NULL && value.data == NULL) {
+                        break;
+                    }
+    
+                    Attribute *attribute = memory_alloc(memory, sizeof(Attribute));
+                    attribute->name = key;
+                    attribute->value = value;
+    
+                    if (attribute_array.count == 0) {
+                        attribute_array.attributes = attribute;
+                    }
+    
+                    attribute_array.count += 1;
+                }
+            }
 
             boolean has_name_attr = false;
             uint32_t name_attr_index = 0;
@@ -1096,7 +1159,7 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                     has_name_attr = true;
                     name_attr_index = j;
 
-                    assert(attribute_array.attributes[j].name.length < MAX_NAME_LENGTH);
+                    assert(attribute_array.attributes[j].name.length < ARK_MAX_TEMPLATE_NAME_LENGTH);
                 }
             }
 
@@ -1105,7 +1168,7 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                     switch (token.tag.type) {
                         case TAG_SELFCLOSING: {
                             char error[] = "x-component-def can NOT be self-closing";
-                            print_tag_error(lexer.content, error, lexer.file_path, token.identifier, lexer.line_number);
+                            print_tag_error(lexer.file_content, error, lexer.file_path, token.identifier, lexer.line_number);
 
                             assert(0); /* TODO: remove */
                             return -1;
@@ -1113,7 +1176,7 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                         case TAG_OPENING: {
                             if (!has_name_attr) {
                                 char error[] = "All tags must contain a name attribute";
-                                print_tag_error(lexer.content, error, lexer.file_path, token.identifier, lexer.line_number);
+                                print_tag_error(lexer.file_content, error, lexer.file_path, token.identifier, lexer.line_number);
 
                                 assert(0); /* TODO: remove */
                                 return -1;
@@ -1124,7 +1187,7 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                                     continue;
 
                                 char error[] = "Invalid attribute for x-component-def tag";
-                                print_no_attribute_allowed_error(lexer.content, error, lexer.file_path, token.identifier, lexer.line_number, &attribute_array.attributes[j]);
+                                print_no_attribute_allowed_error(lexer.file_content, error, lexer.file_path, token.identifier, lexer.line_number, &attribute_array.attributes[j]);
 
                                 assert(0); /* TODO: remove */
                                 return -1;
@@ -1145,7 +1208,7 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                         }
                         case TAG_CLOSING: {
                             if (attribute_array.count) {
-                                print_tag_error(lexer.content, "Closing tag is not allowed to have attributes", lexer.file_path, token.identifier, lexer.line_number);
+                                print_tag_error(lexer.file_content, "Closing tag is not allowed to have attributes", lexer.file_path, token.identifier, lexer.line_number);
 
                                 assert(0); /* TODO: remove */
                                 return -1;
@@ -1161,7 +1224,7 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                             uint32_t import_count = 0;
                             uint32_t slot_count = 0;
 
-                            validate_ast_tag_hierarchy(lexer.content, lexer.file_path, ast_root, &import_count, &slot_count, &error_count);
+                            validate_ast_tag_hierarchy(lexer.file_content, lexer.file_path, ast_root, &import_count, &slot_count, &error_count);
 
                             if (error_count) {
                                 printf("%d errors.\n", error_count);
@@ -1172,7 +1235,7 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
 
                             memcpy(components_soa.names[components_soa.count], ast_root->attribute_array.attributes[ast_root->attribute_array.name_attr_index].value.data, ast_root->attribute_array.attributes[ast_root->attribute_array.name_attr_index].value.length);
                             components_soa.file_paths[components_soa.count] = lexer.file_path;
-                            components_soa.contents[components_soa.count] = lexer.content;
+                            components_soa.contents[components_soa.count] = lexer.file_content;
 
                             components_soa.ast_nodes[components_soa.count] = ast_root;
 
@@ -1215,7 +1278,7 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                         case TAG_SELFCLOSING: {
                             if (!has_name_attr) {
                                 char error[] = "All tags must contain a name attribute";
-                                print_tag_error(lexer.content, error, lexer.file_path, token.identifier, lexer.line_number);
+                                print_tag_error(lexer.file_content, error, lexer.file_path, token.identifier, lexer.line_number);
 
                                 assert(0); /* TODO: remove */
                                 return -1;
@@ -1232,7 +1295,7 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                         case TAG_OPENING: {
                             if (!has_name_attr) {
                                 char error[] = "All tags must contain a name attribute";
-                                print_tag_error(lexer.content, error, lexer.file_path, token.identifier, lexer.line_number);
+                                print_tag_error(lexer.file_content, error, lexer.file_path, token.identifier, lexer.line_number);
 
                                 assert(0); /* TODO: remove */
                                 return -1;
@@ -1252,7 +1315,7 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                         }
                         case TAG_CLOSING: {
                             if (attribute_array.count) {
-                                print_tag_error(lexer.content, "Closing tag is not allowed to have attributes", lexer.file_path, token.identifier, lexer.line_number);
+                                print_tag_error(lexer.file_content, "Closing tag is not allowed to have attributes", lexer.file_path, token.identifier, lexer.line_number);
 
                                 assert(0); /* TODO: remove */
                                 return -1;
@@ -1264,7 +1327,7 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                                 /* print something like: tag last_tag_opened.node is child of token.kind and needs to be closed before closing the parent token.kind */
 
                                 char error[] = "NOT SURE WHAT GOES HERE";
-                                print_tag_error(lexer.content, error, lexer.file_path, last_tag_opened.node->token.identifier, last_tag_opened.node->line_number);
+                                print_tag_error(lexer.file_content, error, lexer.file_path, last_tag_opened.node->token.identifier, last_tag_opened.node->line_number);
 
                                 assert(0); /* TODO: remove */
                                 return -1;
@@ -1293,7 +1356,7 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                         case TAG_SELFCLOSING: {
                             if (!has_name_attr) {
                                 char error[] = "All tags must contain a name attribute";
-                                print_tag_error(lexer.content, error, lexer.file_path, token.identifier, lexer.line_number);
+                                print_tag_error(lexer.file_content, error, lexer.file_path, token.identifier, lexer.line_number);
 
                                 assert(0); /* TODO: remove */
                                 return -1;
@@ -1304,7 +1367,7 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                                     continue;
 
                                 char error[] = "Invalid attribute for x-slot tag";
-                                print_no_attribute_allowed_error(lexer.content, error, lexer.file_path, token.identifier, lexer.line_number, &attribute_array.attributes[j]);
+                                print_no_attribute_allowed_error(lexer.file_content, error, lexer.file_path, token.identifier, lexer.line_number, &attribute_array.attributes[j]);
 
                                 assert(0); /* TODO: remove */
                                 return -1;
@@ -1320,14 +1383,14 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                         }
                         case TAG_OPENING: {
                             char error[] = "x-slot must be self-closing";
-                            print_tag_error(lexer.content, error, lexer.file_path, token.identifier, lexer.line_number);
+                            print_tag_error(lexer.file_content, error, lexer.file_path, token.identifier, lexer.line_number);
 
                             assert(0); /* TODO: remove */
                             return -1;
                         }
                         case TAG_CLOSING: {
                             char error[] = "x-slot must be self-closing";
-                            print_tag_error(lexer.content, error, lexer.file_path, token.identifier, lexer.line_number);
+                            print_tag_error(lexer.file_content, error, lexer.file_path, token.identifier, lexer.line_number);
 
                             assert(0); /* TODO: remove */
                             return -1;
@@ -1345,7 +1408,7 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                     switch (token.tag.type) {
                         case TAG_SELFCLOSING: {
                             char error[] = "x-insert can NOT be self-closing";
-                            print_tag_error(lexer.content, error, lexer.file_path, token.identifier, lexer.line_number);
+                            print_tag_error(lexer.file_content, error, lexer.file_path, token.identifier, lexer.line_number);
 
                             assert(0); /* TODO: remove */
                             return -1;
@@ -1353,7 +1416,7 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                         case TAG_OPENING: {
                             if (!has_name_attr) {
                                 char error[] = "All tags must contain a name attribute";
-                                print_tag_error(lexer.content, error, lexer.file_path, token.identifier, lexer.line_number);
+                                print_tag_error(lexer.file_content, error, lexer.file_path, token.identifier, lexer.line_number);
 
                                 assert(0); /* TODO: remove */
                                 return -1;
@@ -1364,7 +1427,7 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                                     continue;
 
                                 char error[] = "Invalid attribute for x-insert tag";
-                                print_no_attribute_allowed_error(lexer.content, error, lexer.file_path, token.identifier, lexer.line_number, &attribute_array.attributes[j]);
+                                print_no_attribute_allowed_error(lexer.file_content, error, lexer.file_path, token.identifier, lexer.line_number, &attribute_array.attributes[j]);
 
                                 assert(0); /* TODO: remove */
                                 return -1;
@@ -1384,7 +1447,7 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                         }
                         case TAG_CLOSING: {
                             if (attribute_array.count) {
-                                print_tag_error(lexer.content, "Closing tag is not allowed to have attributes", lexer.file_path, token.identifier, lexer.line_number);
+                                print_tag_error(lexer.file_content, "Closing tag is not allowed to have attributes", lexer.file_path, token.identifier, lexer.line_number);
 
                                 assert(0); /* TODO: remove */
                                 return -1;
@@ -1394,7 +1457,7 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                             if (token.kind != last_tag_opened.kind) {
 
                                 char error[] = "NOT SURE WHAT GOES HERE";
-                                print_tag_error(lexer.content, error, lexer.file_path, last_tag_opened.node->token.identifier, last_tag_opened.node->line_number);
+                                print_tag_error(lexer.file_content, error, lexer.file_path, last_tag_opened.node->token.identifier, last_tag_opened.node->line_number);
 
                                 assert(0); /* TODO: remove */
                                 return -1;
@@ -1423,7 +1486,7 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                         case TAG_SELFCLOSING: {
                             if (!has_name_attr) {
                                 char error[] = "All tags must contain a name attribute";
-                                print_tag_error(lexer.content, error, lexer.file_path, token.identifier, lexer.line_number);
+                                print_tag_error(lexer.file_content, error, lexer.file_path, token.identifier, lexer.line_number);
 
                                 assert(0); /* TODO: remove */
                                 return -1;
@@ -1434,7 +1497,7 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                                     continue;
 
                                 char error[] = "Invalid attribute for x-val tag";
-                                print_no_attribute_allowed_error(lexer.content, error, lexer.file_path, token.identifier, lexer.line_number, &attribute_array.attributes[j]);
+                                print_no_attribute_allowed_error(lexer.file_content, error, lexer.file_path, token.identifier, lexer.line_number, &attribute_array.attributes[j]);
 
                                 assert(0); /* TODO: remove */
                                 return -1;
@@ -1450,14 +1513,14 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                         }
                         case TAG_OPENING: {
                             char error[] = "x-val must be self-closing";
-                            print_tag_error(lexer.content, error, lexer.file_path, token.identifier, lexer.line_number);
+                            print_tag_error(lexer.file_content, error, lexer.file_path, token.identifier, lexer.line_number);
 
                             assert(0); /* TODO: remove */
                             return -1;
                         }
                         case TAG_CLOSING: {
                             char error[] = "x-val must be self-closing";
-                            print_tag_error(lexer.content, error, lexer.file_path, token.identifier, lexer.line_number);
+                            print_tag_error(lexer.file_content, error, lexer.file_path, token.identifier, lexer.line_number);
 
                             assert(0); /* TODO: remove */
                             return -1;
@@ -1475,7 +1538,7 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                     switch (token.tag.type) {
                         case TAG_SELFCLOSING: {
                             char error[] = "x-for can NOT be self-closing";
-                            print_tag_error(lexer.content, error, lexer.file_path, token.identifier, lexer.line_number);
+                            print_tag_error(lexer.file_content, error, lexer.file_path, token.identifier, lexer.line_number);
 
                             assert(0); /* TODO: remove */
                             return -1;
@@ -1483,7 +1546,7 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                         case TAG_OPENING: {
                             if (!has_name_attr) {
                                 char error[] = "All tags must contain a name attribute";
-                                print_tag_error(lexer.content, error, lexer.file_path, token.identifier, lexer.line_number);
+                                print_tag_error(lexer.file_content, error, lexer.file_path, token.identifier, lexer.line_number);
 
                                 assert(0); /* TODO: remove */
                                 return -1;
@@ -1494,7 +1557,7 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                                     continue;
 
                                 char error[] = "Invalid attribute for x-for tag";
-                                print_no_attribute_allowed_error(lexer.content, error, lexer.file_path, token.identifier, lexer.line_number, &attribute_array.attributes[j]);
+                                print_no_attribute_allowed_error(lexer.file_content, error, lexer.file_path, token.identifier, lexer.line_number, &attribute_array.attributes[j]);
 
                                 assert(0); /* TODO: remove */
                                 return -1;
@@ -1514,7 +1577,7 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                         }
                         case TAG_CLOSING: {
                             if (attribute_array.count) {
-                                print_tag_error(lexer.content, "Closing tag is not allowed to have attributes", lexer.file_path, token.identifier, lexer.line_number);
+                                print_tag_error(lexer.file_content, "Closing tag is not allowed to have attributes", lexer.file_path, token.identifier, lexer.line_number);
 
                                 assert(0); /* TODO: remove */
                                 return -1;
@@ -1524,7 +1587,7 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                             if (token.kind != last_tag_opened.kind) {
 
                                 char error[] = "NOT SURE WHAT GOES HERE";
-                                print_tag_error(lexer.content, error, lexer.file_path, last_tag_opened.node->token.identifier, last_tag_opened.node->line_number);
+                                print_tag_error(lexer.file_content, error, lexer.file_path, last_tag_opened.node->token.identifier, last_tag_opened.node->line_number);
 
                                 assert(0); /* TODO: remove */
                                 return -1;

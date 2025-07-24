@@ -48,12 +48,6 @@
 #define ARK_MAX_QUEUED_HTTP_REQUESTS KB(1) /** could also be SOMAXCONN */
 #endif
 
-#define MASK_4        0xFFFFFFFF00000000
-#define MASK_5        0xFFFFFFFFFF000000
-#define MASK_6        0xFFFFFFFFFFFF0000
-#define MASK_7        0xFFFFFFFFFFFFFF00
-#define MASK_8        0xFFFFFFFFFFFFFFFF
-
 #define GET           0x4745542000000000
 #define HEAD          0x4845414420000000
 #define TRACE         0x5452414345200000
@@ -112,16 +106,13 @@ typedef struct {
     uint32_t id; /** TODO: Explain why this is necessary */
 } FetchContext;
 
-#define U32_BITS 32
-
 HTTPRequestContext *request_pool_ptrs[ARK_MAX_QUEUED_HTTP_REQUESTS];
-uint32_t request_pool_availability_mask[ARK_MAX_QUEUED_HTTP_REQUESTS / U32_BITS];
 
-#define MASK_INDEX(i)       ((i) / U32_BITS)
-#define BIT_POSITION(i)     ((i) % U32_BITS)
-
-#define SET_POOL_SLOT_AS_AVAILABLE(i)    (request_pool_availability_mask[MASK_INDEX(i)] &= ~(1U << BIT_POSITION(i)))
-#define SET_POOL_SLOT_AS_OCCUPIED(i)     (request_pool_availability_mask[MASK_INDEX(i)] |=  (1U << BIT_POSITION(i)))
+#if ARK_MAX_QUEUED_HTTP_REQUESTS <= 32
+    uint32_t request_pool_availability_mask[1];
+#else
+    uint32_t request_pool_availability_mask[ARK_MAX_QUEUED_HTTP_REQUESTS / U32_BITS];
+#endif
 
 /** Epoll stuff */
 int epoll_fd;
@@ -210,7 +201,7 @@ int ark_send_response(uint32_t handle, char *response, size_t response_length) {
     memory_free(request_pool_ptrs[handle]->memory);
     request_pool_ptrs[handle] = NULL;
     
-    SET_POOL_SLOT_AS_AVAILABLE(handle);
+    TURN_OFF_U32_BIT(request_pool_availability_mask, handle);
 
     return 0;
 }
@@ -322,7 +313,7 @@ int ark_retrive_request(ArkRequest *ark_request) {
                     _ = fcntl(sock_fd, F_SETFL, sock_fd_flags | O_NONBLOCK);
                     assert(_ != -1);
 
-                    SET_POOL_SLOT_AS_OCCUPIED(0); /** IMPORTANT! Do not use pool slot 0 because of setjmp/longjmp */
+                    TURN_ON_U32_BIT(request_pool_availability_mask, 0); /** IMPORTANT! Do not use pool slot 0 because of setjmp/longjmp */
                     
                     uint32_t pos;
                     boolean found = false;
@@ -346,7 +337,7 @@ int ark_retrive_request(ArkRequest *ark_request) {
                     assert(found);
 
                 found:;
-                    SET_POOL_SLOT_AS_OCCUPIED(pos);
+                    TURN_ON_U32_BIT(request_pool_availability_mask, pos);
 
                     Memory *memory = reserve_memory(KB(1));
                     request_pool_ptrs[pos] = memory_alloc(memory, sizeof(HTTPRequestContext));
