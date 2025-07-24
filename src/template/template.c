@@ -10,10 +10,10 @@
 #include "../../include/ark/memory.h"
 #include "../../include/ark/utils.h"
 
-#define COMPONENT_DEFINITION_IDENTIFIER "x-component-def"
-#define COMPONENT_IMPORT_IDENTIFIER "x-component"
+#define COMPONENT_DEFINITION_IDENTIFIER "x-def"
+#define COMPONENT_IMPORT_IDENTIFIER "x-use"
 #define SLOT_IDENTIFIER "x-slot"
-#define INSERT_IDENTIFIER "x-insert"
+#define FILL_IDENTIFIER "x-fill"
 #define VAL_IDENTIFIER "x-val"
 #define FOR_IDENTIFIER "x-for"
 
@@ -50,7 +50,7 @@ typedef enum {
     TOKEN_COMPONENT_DEFINITION = 1,
     TOKEN_COMPONENT_IMPORT = 2,
     TOKEN_SLOT = 3,
-    TOKEN_INSERT = 4,
+    TOKEN_FILL = 4,
     TOKEN_VAL = 5,
     TOKEN_FOR = 6,
 
@@ -144,12 +144,12 @@ typedef struct {
     Name *names;
     ASTNode **ast_nodes;
     uint32_t count;
-} InsertSOA;
+} FillSOA;
 
 typedef struct {
     Name *names;
     ASTNode **ast_nodes;
-    InsertSOA *inserts_soa;
+    FillSOA *fills_soa;
     uint32_t count;
 } ImportSOA;
 
@@ -196,8 +196,8 @@ TokenKind get_token_kind(String identifier) {
         return TOKEN_COMPONENT_IMPORT;
     } else if (strncmp(SLOT_IDENTIFIER, identifier.data, identifier.length) == 0 && identifier.length == (array_count(SLOT_IDENTIFIER) - 1)) {
         return TOKEN_SLOT;
-    } else if (strncmp(INSERT_IDENTIFIER, identifier.data, identifier.length) == 0 && identifier.length == (array_count(INSERT_IDENTIFIER) - 1)) {
-        return TOKEN_INSERT;
+    } else if (strncmp(FILL_IDENTIFIER, identifier.data, identifier.length) == 0 && identifier.length == (array_count(FILL_IDENTIFIER) - 1)) {
+        return TOKEN_FILL;
     } else if (strncmp(VAL_IDENTIFIER, identifier.data, identifier.length) == 0 && identifier.length == (array_count(VAL_IDENTIFIER) - 1)) {
         return TOKEN_VAL;
     } else if (strncmp(FOR_IDENTIFIER, identifier.data, identifier.length) == 0 && identifier.length == (array_count(FOR_IDENTIFIER) - 1)) {
@@ -404,7 +404,7 @@ ASTNode *convert_to_ast(Memory *memory, Node **nodes, uint32_t count) {
 
             ASTNode *parent = ast_nodes[parent_index];
 
-            /* Insert node as a child of its parent */
+            /* Fill node as a child of its parent */
             if (parent->first_child == NULL) {
                 parent->first_child = ast_nodes[i];
             } else {
@@ -439,8 +439,8 @@ const char *token_kind_to_string(TokenKind kind) {
             return "COMPONENT_IMPORT";
         case TOKEN_SLOT:
             return "SLOT";
-        case TOKEN_INSERT:
-            return "INSERT";
+        case TOKEN_FILL:
+            return "FILL";
         case TOKEN_VAL:
             return "VAL";
         case TOKEN_FOR:
@@ -551,8 +551,8 @@ void validate_ast_tag_hierarchy(String content, String file_path, ASTNode *node,
         case TOKEN_COMPONENT_DEFINITION: {
             ASTNode *child = node->first_child;
             while (child) {
-                if (child->token.kind == TOKEN_INSERT) {
-                    char error[] = "x-insert can not be direct child of x-component-def, it can only be direct child of x-component";
+                if (child->token.kind == TOKEN_FILL) {
+                    char error[] = "x-fill can not be direct child of x-def, it can only be direct child of x-use";
 
                     print_tag_error(content, error, file_path, child->token.identifier, child->line_number);
                     *error_count += 1;
@@ -566,8 +566,8 @@ void validate_ast_tag_hierarchy(String content, String file_path, ASTNode *node,
         case TOKEN_COMPONENT_IMPORT: {
             ASTNode *child = node->first_child;
             while (child) {
-                if (child->token.kind != TOKEN_INSERT) {
-                    char error[] = "x-component can only have direct child x-insert";
+                if (child->token.kind != TOKEN_FILL) {
+                    char error[] = "x-use can only have direct child x-fill";
 
                     print_tag_error(content, error, file_path, child->token.identifier, child->line_number);
                     *error_count += 1;
@@ -593,11 +593,11 @@ void validate_ast_tag_hierarchy(String content, String file_path, ASTNode *node,
 
             break;
         }
-        case TOKEN_INSERT: {
+        case TOKEN_FILL: {
             ASTNode *child = node->first_child;
             while (child) {
-                if (child->token.kind == TOKEN_INSERT) {
-                    char error[] = "x-insert can not be direct child of x-insert, it can only be direct child of x-component";
+                if (child->token.kind == TOKEN_FILL) {
+                    char error[] = "x-fill can not be direct child of x-fill, it can only be direct child of x-use";
 
                     print_tag_error(content, error, file_path, child->token.identifier, child->line_number);
                     *error_count += 1;
@@ -622,8 +622,8 @@ void validate_ast_tag_hierarchy(String content, String file_path, ASTNode *node,
         case TOKEN_FOR: {
             ASTNode *child = node->first_child;
             while (child) {
-                if (child->token.kind == TOKEN_INSERT) {
-                    char error[] = "x-insert can not be direct child of x-for, it can only be direct child of x-component";
+                if (child->token.kind == TOKEN_FILL) {
+                    char error[] = "x-fill can not be direct child of x-for, it can only be direct child of x-use";
 
                     print_tag_error(content, error, file_path, child->token.identifier, child->line_number);
                     *error_count += 1;
@@ -674,18 +674,18 @@ void ast_to_soa(Memory *memory, ASTNode *node, ComponentSOA *components_soa) {
             child = child->next_sibling;
         }
 
-        InsertSOA *inserts_soa = &(imports_soa->inserts_soa[imports_soa->count]);
+        FillSOA *fills_soa = &(imports_soa->fills_soa[imports_soa->count]);
 
         if (child_count) {
-            inserts_soa->names = memory_alloc(memory, sizeof(Name) * child_count);
-            inserts_soa->ast_nodes = memory_alloc(memory, sizeof(ASTNode *) * child_count);
+            fills_soa->names = memory_alloc(memory, sizeof(Name) * child_count);
+            fills_soa->ast_nodes = memory_alloc(memory, sizeof(ASTNode *) * child_count);
 
             child = node->first_child;
             while (child) {
 
-                memcpy(inserts_soa->names[inserts_soa->count], child->attribute_array.attributes[child->attribute_array.name_attr_index].value.data, child->attribute_array.attributes[child->attribute_array.name_attr_index].value.length);
-                inserts_soa->ast_nodes[inserts_soa->count] = child;
-                inserts_soa->count += 1;
+                memcpy(fills_soa->names[fills_soa->count], child->attribute_array.attributes[child->attribute_array.name_attr_index].value.data, child->attribute_array.attributes[child->attribute_array.name_attr_index].value.length);
+                fills_soa->ast_nodes[fills_soa->count] = child;
+                fills_soa->count += 1;
 
                 child = child->next_sibling;
             }
@@ -726,14 +726,14 @@ void print_components_soa(ComponentSOA *components_soa, uint32_t i) {
         uint32_t j;
         for (j = 0; j < imports_soa->count; j++) {
             printf("%s", imports_soa->names[j]);
-            if (imports_soa->inserts_soa[j].count) {
-                InsertSOA *inserts_soa = &(imports_soa->inserts_soa[j]);
+            if (imports_soa->fills_soa[j].count) {
+                FillSOA *fills_soa = &(imports_soa->fills_soa[j]);
                 printf("(");
                 uint32_t k;
-                for (k = 0; k < inserts_soa->count; k++) {
-                    printf("%s", inserts_soa->names[k]);
+                for (k = 0; k < fills_soa->count; k++) {
+                    printf("%s", fills_soa->names[k]);
 
-                    if ((k + 1) != inserts_soa->count) {
+                    if ((k + 1) != fills_soa->count) {
                         printf(", ");
                     }
                 }
@@ -752,7 +752,7 @@ void print_components_soa(ComponentSOA *components_soa, uint32_t i) {
 
 void print_no_attribute_allowed_error(String content, char *error, String file_path, String identifier, uint32_t line_number, Attribute *attribute) {
     char *content_end = content.data + content.length;
-    printf("Invalid attribute for %.*s tag, only x-component tag can have attributes other than the name attribute:\n", (int)identifier.length, identifier.data);
+    printf("Invalid attribute for %.*s tag, only x-use tag can have attributes other than the name attribute:\n", (int)identifier.length, identifier.data);
     printf("    file: %.*s\n", (int)file_path.length, file_path.data);
     printf("    line: %d\n", line_number);
     printf("\n");
@@ -814,15 +814,15 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
             For example:
 
             Valid
-            <x-component-def name="Button">
+            <x-def name="Button">
                 <!-- component definition -->
-            </x-component-def>
+            </x-def>
 
             Invalid
-            <x-component-def name="Button">
-                <x-component-def name="Nested"> <!-- Invalid: nested declaration -->
-                </x-component-def>
-            </x-component-def>
+            <x-def name="Button">
+                <x-def name="Nested"> <!-- Invalid: nested declaration -->
+                </x-def>
+            </x-def>
             */
 
             char *file_path = array_of_filepaths[i];
@@ -835,11 +835,11 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
     
             while (lexer.cursor < lexer.file_content.length) {
                 char *c = peek(&lexer);
-                if (strncmp("<x-component-def ", c, strlen("<x-component-def ")) == 0) {
+                if (strncmp("<x-def ", c, strlen("<x-def ")) == 0) {
                     if (opening_tag.data) {
-                        char error[] = "x-component-def can't ever be a child tag, it must always be placed at the top level. "
-                                       "If you think you already placed x-component-def at the top level, check that you did't "
-                                       "leave open a x-component-def earlier in the file";
+                        char error[] = "x-def can't ever be a child tag, it must always be placed at the top level. "
+                                       "If you think you already placed x-def at the top level, check that you did't "
+                                       "leave open a x-def earlier in the file";
                         print_tag_error(lexer.file_content, error, lexer.file_path, opening_tag, opening_tag_line_number);
     
                         return -1;
@@ -847,11 +847,11 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
     
                     advance_cursor(&lexer); /* skip '<' */
                     opening_tag.data = peek(&lexer);
-                    opening_tag.length = strlen("x-component-def");
+                    opening_tag.length = strlen("x-def");
                     opening_tag_line_number = lexer.line_number;
     
                     components_count += 1;
-                } else if (strncmp("</x-component-def>", c, strlen("</x-component-def>")) == 0) {
+                } else if (strncmp("</x-def>", c, strlen("</x-def>")) == 0) {
                     memset(&opening_tag, 0, sizeof(opening_tag));
                 } else if (*c == '\n') {
                     lexer.line_number += 1;
@@ -892,9 +892,9 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
 
         while (lexer.cursor < lexer.file_content.length) {
             char *c = peek(&lexer);
-            if (strncmp("<x-component-def ", c, strlen("<x-component-def ")) == 0) {
+            if (strncmp("<x-def ", c, strlen("<x-def ")) == 0) {
                 inside_component = true;
-            } else if (strncmp("</x-component-def>", c, strlen("</x-component-def>")) == 0) {
+            } else if (strncmp("</x-def>", c, strlen("</x-def>")) == 0) {
                 component_index += 1;
                 inside_component = false;
 
@@ -1167,7 +1167,7 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                 case TOKEN_COMPONENT_DEFINITION: {
                     switch (token.tag.type) {
                         case TAG_SELFCLOSING: {
-                            char error[] = "x-component-def can NOT be self-closing";
+                            char error[] = "x-def can NOT be self-closing";
                             print_tag_error(lexer.file_content, error, lexer.file_path, token.identifier, lexer.line_number);
 
                             assert(0); /* TODO: remove */
@@ -1186,7 +1186,7 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                                 if (j == name_attr_index)
                                     continue;
 
-                                char error[] = "Invalid attribute for x-component-def tag";
+                                char error[] = "Invalid attribute for x-def tag";
                                 print_no_attribute_allowed_error(lexer.file_content, error, lexer.file_path, token.identifier, lexer.line_number, &attribute_array.attributes[j]);
 
                                 assert(0); /* TODO: remove */
@@ -1243,7 +1243,7 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                                 components_soa.imports_soa[components_soa.count] = memory_alloc(memory, sizeof(ImportSOA));
                                 components_soa.imports_soa[components_soa.count]->names = memory_alloc(memory, sizeof(Name) * import_count);
                                 components_soa.imports_soa[components_soa.count]->ast_nodes = memory_alloc(memory, sizeof(ASTNode *) * import_count);
-                                components_soa.imports_soa[components_soa.count]->inserts_soa = memory_alloc(memory, sizeof(InsertSOA) * import_count);
+                                components_soa.imports_soa[components_soa.count]->fills_soa = memory_alloc(memory, sizeof(FillSOA) * import_count);
                             }
 
                             if (slot_count) {
@@ -1404,10 +1404,10 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                     assert(0);
                     break;
                 }
-                case TOKEN_INSERT: {
+                case TOKEN_FILL: {
                     switch (token.tag.type) {
                         case TAG_SELFCLOSING: {
-                            char error[] = "x-insert can NOT be self-closing";
+                            char error[] = "x-fill can NOT be self-closing";
                             print_tag_error(lexer.file_content, error, lexer.file_path, token.identifier, lexer.line_number);
 
                             assert(0); /* TODO: remove */
@@ -1426,7 +1426,7 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                                 if (j == name_attr_index)
                                     continue;
 
-                                char error[] = "Invalid attribute for x-insert tag";
+                                char error[] = "Invalid attribute for x-fill tag";
                                 print_no_attribute_allowed_error(lexer.file_content, error, lexer.file_path, token.identifier, lexer.line_number, &attribute_array.attributes[j]);
 
                                 assert(0); /* TODO: remove */
@@ -1656,26 +1656,26 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                                                                                          Component AST starting at the currently iterated component import.
                                                                                          Bellow example for Component `foo` and currently iterated component import `bar`:
                                                                                          
-                                                                                          <x-component-def name="foo">
+                                                                                          <x-def name="foo">
                                                                                               <div>
                                                                                                   <div>
                                                                                                      ↓ FROM HERE
-                                                                                                      <x-component name="bar">
-                                                                                                          <x-insert name="default">
+                                                                                                      <x-use name="bar">
+                                                                                                          <x-fill name="default">
                                                                                                               ...
-                                                                                                          </x-insert>
-                                                                                                      </x-component> 
+                                                                                                          </x-fill>
+                                                                                                      </x-use> 
                                                                                                                     ↑ TO HERE
                                                                                                   </div>
                                                                                                   <div>
-                                                                                                      <x-component name="baz">
-                                                                                                          <x-insert name="default">
+                                                                                                      <x-use name="baz">
+                                                                                                          <x-fill name="default">
                                                                                                               ...
-                                                                                                          </x-insert>
-                                                                                                      </x-component>
+                                                                                                          </x-fill>
+                                                                                                      </x-use>
                                                                                                   </div>
                                                                                               </div>
-                                                                                          </x-component-def>
+                                                                                          </x-def>
                                                                                         */
 
                 uint32_t k;
@@ -1691,16 +1691,16 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                          
                          component import:
                               ...
-                                 <x-component name="bar" fistname="John" input_style="class='text-[22px]/[28px] font-semibold'">
+                                 <x-use name="bar" fistname="John" input_style="class='text-[22px]/[28px] font-semibold'">
                                     ...                  ^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-                                 </x-component>
+                                 </x-use>
                               ...
                         
                          imported component:
-                              <x-component-def name="bar">
+                              <x-def name="bar">
                                   ...
                                   <input value="%fistname%" %input_style% />
-                              </x-component-def>
+                              </x-def>
                         */
                         uint32_t h;
                         for (h = 0; h < import_ast_node->attribute_array.count; h++) {
@@ -1734,22 +1734,22 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
 
                 if (component_exists) {
                     /*
-                     Check that the component import inserts match the slots in the corresponding component.
+                     Check that the component import fills match the slots in the corresponding component.
                      
                      component import:
                           ...
-                             <x-component name="bar">
-                                 <x-insert name="fistname">
+                             <x-use name="bar">
+                                 <x-fill name="fistname">
                                       John
-                                 </x-insert>
-                                 <x-insert name="lastname">
+                                 </x-fill>
+                                 <x-fill name="lastname">
                                       Doe
-                                 </x-insert>
-                             </x-component>
+                                 </x-fill>
+                             </x-use>
                           ...
                     
                      imported component:
-                          <x-component-def name="bar">
+                          <x-def name="bar">
                               ... 
                               <p>
                                   <x-slot name="fistname" />
@@ -1758,13 +1758,13 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                                   <x-slot name="lastname" />
                               </p>
                               ...
-                          </x-component-def>
+                          </x-def>
                     */
-                    uint32_t insert_count = components_soa.imports_soa[i]->inserts_soa[j].count;
-                    InsertSOA *inserts_soa = &components_soa.imports_soa[i]->inserts_soa[j];
+                    uint32_t fill_count = components_soa.imports_soa[i]->fills_soa[j].count;
+                    FillSOA *fills_soa = &components_soa.imports_soa[i]->fills_soa[j];
                     uint32_t h;
-                    for (h = 0; h < insert_count; h++) {
-                        char *insert = inserts_soa->names[h];
+                    for (h = 0; h < fill_count; h++) {
+                        char *fill = fills_soa->names[h];
 
                         boolean slot_exists = false;
                         uint32_t imported_component_slot_index = 0;
@@ -1772,7 +1772,7 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                         if (components_soa.slots_soa[imported_component_index]) {
                             uint32_t f;
                             for (f = 0; f < components_soa.slots_soa[imported_component_index]->count; f++) {
-                                if (strncmp(components_soa.slots_soa[imported_component_index]->names[f], insert, strlen(insert)) == 0) {
+                                if (strncmp(components_soa.slots_soa[imported_component_index]->names[f], fill, strlen(fill)) == 0) {
                                     slot_exists = true;
                                     imported_component_slot_index = f;
                                     break;

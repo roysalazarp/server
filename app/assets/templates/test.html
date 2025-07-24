@@ -1,47 +1,47 @@
-<x-component-def name="foo">
+<x-def name="foo">
     <div class="foo">
-        <x-component name="layout">
-            <x-insert name="content">
+        <x-use name="layout">
+            <x-fill name="content">
                 <h1>Foo</h1>
                 <div>
-                    <x-component name="bar" firstname="John">
-                        <x-insert name="lastname"> 
+                    <x-use name="bar" firstname="John">
+                        <x-fill name="lastname"> 
                             Doe
-                        </x-insert>
-                    </x-component>
+                        </x-fill>
+                    </x-use>
                 </div>
-            </x-insert>
-        </x-component>
+            </x-fill>
+        </x-use>
     </div>
-</x-component-def>
+</x-def>
 
-<x-component-def name="layout">
+<x-def name="layout">
     <div class="layout">
         <x-slot name="content" />
     </div>
-</x-component-def>
+</x-def>
 
-<x-component-def name="bar">
+<x-def name="bar">
     <div class="bar">
-        <h2>%firstname%</h2>
+        <h2>{{ firstname }}</h2>
         <div>
-            <x-component name="baz">
-                <x-insert name="text">
+            <x-use name="baz">
+                <x-fill name="text">
                     <div>hahah</div>
                     <x-slot name="lastname" />
-                </x-insert>
-            </x-component>
+                </x-fill>
+            </x-use>
         </div>
     </div>
-</x-component-def>
+</x-def>
 
-<x-component-def name="baz">
+<x-def name="baz">
     <div class="baz">
         <div>
             <x-slot name="text" />
         </div>
     </div>
-</x-component-def>
+</x-def>
 
 <div class="foo">
     <div class="layout">
