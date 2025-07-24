@@ -11,7 +11,7 @@
 #include "../../include/ark/utils.h"
 
 #define COMPONENT_DEFINITION_IDENTIFIER "x-def"
-#define COMPONENT_IMPORT_IDENTIFIER "x-use"
+#define COMPONENT_USE_IDENTIFIER "x-use"
 #define SLOT_IDENTIFIER "x-slot"
 #define FILL_IDENTIFIER "x-fill"
 #define VAL_IDENTIFIER "x-val"
@@ -48,7 +48,7 @@ typedef enum {
     TOKEN_EOF = 0,
 
     TOKEN_COMPONENT_DEFINITION = 1,
-    TOKEN_COMPONENT_IMPORT = 2,
+    TOKEN_COMPONENT_USE = 2,
     TOKEN_SLOT = 3,
     TOKEN_FILL = 4,
     TOKEN_VAL = 5,
@@ -151,14 +151,14 @@ typedef struct {
     ASTNode **ast_nodes;
     FillSOA *fills_soa;
     uint32_t count;
-} ImportSOA;
+} UseSOA;
 
 typedef struct {
     Name *names;
     String *components;
     ASTNode **ast_nodes;
     PlaceholderSOA **placeholders_soa;
-    ImportSOA **imports_soa;
+    UseSOA **uses_soa;
     SlotSOA **slots_soa;
     String *file_paths;
     String *contents;
@@ -192,8 +192,8 @@ void advance_cursor(Lexer *lexer) { lexer->cursor += 1; }
 TokenKind get_token_kind(String identifier) {
     if (strncmp(COMPONENT_DEFINITION_IDENTIFIER, identifier.data, identifier.length) == 0 && identifier.length == (array_count(COMPONENT_DEFINITION_IDENTIFIER) - 1)) {
         return TOKEN_COMPONENT_DEFINITION;
-    } else if (strncmp(COMPONENT_IMPORT_IDENTIFIER, identifier.data, identifier.length) == 0 && identifier.length == (array_count(COMPONENT_IMPORT_IDENTIFIER) - 1)) {
-        return TOKEN_COMPONENT_IMPORT;
+    } else if (strncmp(COMPONENT_USE_IDENTIFIER, identifier.data, identifier.length) == 0 && identifier.length == (array_count(COMPONENT_USE_IDENTIFIER) - 1)) {
+        return TOKEN_COMPONENT_USE;
     } else if (strncmp(SLOT_IDENTIFIER, identifier.data, identifier.length) == 0 && identifier.length == (array_count(SLOT_IDENTIFIER) - 1)) {
         return TOKEN_SLOT;
     } else if (strncmp(FILL_IDENTIFIER, identifier.data, identifier.length) == 0 && identifier.length == (array_count(FILL_IDENTIFIER) - 1)) {
@@ -435,8 +435,8 @@ const char *token_kind_to_string(TokenKind kind) {
     switch (kind) {
         case TOKEN_COMPONENT_DEFINITION:
             return "COMPONENT_DEFINITION";
-        case TOKEN_COMPONENT_IMPORT:
-            return "COMPONENT_IMPORT";
+        case TOKEN_COMPONENT_USE:
+            return "COMPONENT_USE";
         case TOKEN_SLOT:
             return "SLOT";
         case TOKEN_FILL:
@@ -546,7 +546,7 @@ void print_tag_attr_error(String content, ASTNode *node, Attribute attribute) {
     printf("\n");
 }
 
-void validate_ast_tag_hierarchy(String content, String file_path, ASTNode *node, uint32_t *import_count, uint32_t *slot_count, uint32_t *error_count) {
+void validate_ast_tag_hierarchy(String content, String file_path, ASTNode *node, uint32_t *use_count, uint32_t *slot_count, uint32_t *error_count) {
     switch (node->token.kind) {
         case TOKEN_COMPONENT_DEFINITION: {
             ASTNode *child = node->first_child;
@@ -563,7 +563,7 @@ void validate_ast_tag_hierarchy(String content, String file_path, ASTNode *node,
 
             break;
         }
-        case TOKEN_COMPONENT_IMPORT: {
+        case TOKEN_COMPONENT_USE: {
             ASTNode *child = node->first_child;
             while (child) {
                 if (child->token.kind != TOKEN_FILL) {
@@ -576,7 +576,7 @@ void validate_ast_tag_hierarchy(String content, String file_path, ASTNode *node,
                 child = child->next_sibling;
             }
 
-            *import_count += 1;
+            *use_count += 1;
 
             break;
         }
@@ -641,11 +641,11 @@ void validate_ast_tag_hierarchy(String content, String file_path, ASTNode *node,
     }
 
     if (node->next_sibling) {
-        validate_ast_tag_hierarchy(content, file_path, node->next_sibling, import_count, slot_count, error_count);
+        validate_ast_tag_hierarchy(content, file_path, node->next_sibling, use_count, slot_count, error_count);
     }
 
     if (node->first_child) {
-        validate_ast_tag_hierarchy(content, file_path, node->first_child, import_count, slot_count, error_count);
+        validate_ast_tag_hierarchy(content, file_path, node->first_child, use_count, slot_count, error_count);
     }
 }
 
@@ -661,11 +661,11 @@ void ast_to_soa(Memory *memory, ASTNode *node, ComponentSOA *components_soa) {
         slots_soa->count += 1;
     }
 
-    if (node->token.kind == TOKEN_COMPONENT_IMPORT) {
-        ImportSOA *imports_soa = components_soa->imports_soa[current_component_index];
+    if (node->token.kind == TOKEN_COMPONENT_USE) {
+        UseSOA *uses_soa = components_soa->uses_soa[current_component_index];
 
-        memcpy(imports_soa->names[imports_soa->count], node->attribute_array.attributes[node->attribute_array.name_attr_index].value.data, node->attribute_array.attributes[node->attribute_array.name_attr_index].value.length);
-        imports_soa->ast_nodes[imports_soa->count] = node;
+        memcpy(uses_soa->names[uses_soa->count], node->attribute_array.attributes[node->attribute_array.name_attr_index].value.data, node->attribute_array.attributes[node->attribute_array.name_attr_index].value.length);
+        uses_soa->ast_nodes[uses_soa->count] = node;
 
         uint32_t child_count = 0;
         ASTNode *child = node->first_child;
@@ -674,7 +674,7 @@ void ast_to_soa(Memory *memory, ASTNode *node, ComponentSOA *components_soa) {
             child = child->next_sibling;
         }
 
-        FillSOA *fills_soa = &(imports_soa->fills_soa[imports_soa->count]);
+        FillSOA *fills_soa = &(uses_soa->fills_soa[uses_soa->count]);
 
         if (child_count) {
             fills_soa->names = memory_alloc(memory, sizeof(Name) * child_count);
@@ -691,7 +691,7 @@ void ast_to_soa(Memory *memory, ASTNode *node, ComponentSOA *components_soa) {
             }
         }
 
-        imports_soa->count += 1;
+        uses_soa->count += 1;
     }
 
     if (node->next_sibling) {
@@ -720,14 +720,14 @@ void print_components_soa(ComponentSOA *components_soa, uint32_t i) {
         printf("\n");
     }
 
-    if (components_soa->imports_soa[i]) {
-        ImportSOA *imports_soa = components_soa->imports_soa[i];
-        printf("    has %d imports: ", imports_soa->count);
+    if (components_soa->uses_soa[i]) {
+        UseSOA *uses_soa = components_soa->uses_soa[i];
+        printf("    has %d uses: ", uses_soa->count);
         uint32_t j;
-        for (j = 0; j < imports_soa->count; j++) {
-            printf("%s", imports_soa->names[j]);
-            if (imports_soa->fills_soa[j].count) {
-                FillSOA *fills_soa = &(imports_soa->fills_soa[j]);
+        for (j = 0; j < uses_soa->count; j++) {
+            printf("%s", uses_soa->names[j]);
+            if (uses_soa->fills_soa[j].count) {
+                FillSOA *fills_soa = &(uses_soa->fills_soa[j]);
                 printf("(");
                 uint32_t k;
                 for (k = 0; k < fills_soa->count; k++) {
@@ -740,7 +740,7 @@ void print_components_soa(ComponentSOA *components_soa, uint32_t i) {
                 printf(")");
             }
 
-            if ((j + 1) != imports_soa->count) {
+            if ((j + 1) != uses_soa->count) {
                 printf(", ");
             }
         }
@@ -965,7 +965,7 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
     components_soa.components = memory_alloc(memory, sizeof(String) * components_count);
     components_soa.ast_nodes = memory_alloc(memory, sizeof(ASTNode *) * components_count);
     components_soa.placeholders_soa = memory_alloc(memory, sizeof(PlaceholderSOA *) * components_count);
-    components_soa.imports_soa = memory_alloc(memory, sizeof(ImportSOA *) * components_count);
+    components_soa.uses_soa = memory_alloc(memory, sizeof(UseSOA *) * components_count);
     components_soa.slots_soa = memory_alloc(memory, sizeof(SlotSOA *) * components_count);
     components_soa.file_paths = memory_alloc(memory, sizeof(String) * components_count);
     components_soa.contents = memory_alloc(memory, sizeof(String) * components_count);
@@ -1221,10 +1221,10 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
 
                             uint32_t error_count = 0;
 
-                            uint32_t import_count = 0;
+                            uint32_t use_count = 0;
                             uint32_t slot_count = 0;
 
-                            validate_ast_tag_hierarchy(lexer.file_content, lexer.file_path, ast_root, &import_count, &slot_count, &error_count);
+                            validate_ast_tag_hierarchy(lexer.file_content, lexer.file_path, ast_root, &use_count, &slot_count, &error_count);
 
                             if (error_count) {
                                 printf("%d errors.\n", error_count);
@@ -1239,15 +1239,15 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
 
                             components_soa.ast_nodes[components_soa.count] = ast_root;
 
-                            if (import_count) {
-                                components_soa.imports_soa[components_soa.count] = memory_alloc(memory, sizeof(ImportSOA));
-                                components_soa.imports_soa[components_soa.count]->names = memory_alloc(memory, sizeof(Name) * import_count);
-                                components_soa.imports_soa[components_soa.count]->ast_nodes = memory_alloc(memory, sizeof(ASTNode *) * import_count);
-                                components_soa.imports_soa[components_soa.count]->fills_soa = memory_alloc(memory, sizeof(FillSOA) * import_count);
+                            if (use_count) {
+                                components_soa.uses_soa[components_soa.count] = memory_alloc(memory, sizeof(UseSOA));
+                                components_soa.uses_soa[components_soa.count]->names = memory_alloc(memory, sizeof(Name) * use_count);
+                                components_soa.uses_soa[components_soa.count]->ast_nodes = memory_alloc(memory, sizeof(ASTNode *) * use_count);
+                                components_soa.uses_soa[components_soa.count]->fills_soa = memory_alloc(memory, sizeof(FillSOA) * use_count);
                             }
 
                             if (slot_count) {
-                                components_soa.slots_soa[components_soa.count] = memory_alloc(memory, sizeof(ImportSOA));
+                                components_soa.slots_soa[components_soa.count] = memory_alloc(memory, sizeof(UseSOA));
                                 components_soa.slots_soa[components_soa.count]->names = memory_alloc(memory, sizeof(Name) * slot_count);
                                 components_soa.slots_soa[components_soa.count]->ast_nodes = memory_alloc(memory, sizeof(ASTNode *) * slot_count);
                             }
@@ -1273,7 +1273,7 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                     assert(0);
                     break;
                 }
-                case TOKEN_COMPONENT_IMPORT: {
+                case TOKEN_COMPONENT_USE: {
                     switch (token.tag.type) {
                         case TAG_SELFCLOSING: {
                             if (!has_name_attr) {
@@ -1623,38 +1623,38 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
     }
 
     /*
-     TODO: (Maybe) Warn the user if they are using a component import as a self-closing tag, but the corresponding 
-           component definition contains slots. Same idea for component import attributes and placeholders.
+     TODO: (Maybe) Warn the user if they are using a component use as a self-closing tag, but the corresponding 
+           component definition contains slots. Same idea for component use attributes and placeholders.
     */
 
     for (i = 0; i < components_soa.count; i++) {
         print_components_soa(&components_soa, i);
         char *component_name = components_soa.names[i];
 
-        if (components_soa.imports_soa[i]) { /* Does the component have any imports? If the component at index `i` in the SOA has no imports, this should be NULL because memory was never allocated. */
-            uint32_t num_imports = components_soa.imports_soa[i]->count;
+        if (components_soa.uses_soa[i]) { /* Does the component have any uses? If the component at index `i` in the SOA has no uses, this should be NULL because memory was never allocated. */
+            uint32_t num_uses = components_soa.uses_soa[i]->count;
 
             uint32_t j;
-            for (j = 0; j < num_imports; j++) {
-                char *import_name = components_soa.imports_soa[i]->names[j];
-                if (strncmp(component_name, import_name, strlen(import_name)) == 0) {
-                    char error[] = "Recursive import. Component is importing itself";
+            for (j = 0; j < num_uses; j++) {
+                char *use_name = components_soa.uses_soa[i]->names[j];
+                if (strncmp(component_name, use_name, strlen(use_name)) == 0) {
+                    char error[] = "Recursive use. Component is using itself";
                     printf("%s:\n", error);
                     printf("    file: %.*s\n", (int)components_soa.file_paths[i].length, components_soa.file_paths[i].data);
-                    printf("    line: %d\n", components_soa.imports_soa[i]->ast_nodes[j]->line_number);
+                    printf("    line: %d\n", components_soa.uses_soa[i]->ast_nodes[j]->line_number);
                     printf("\n");
-                    print_tag_attr_error(components_soa.contents[i], components_soa.imports_soa[i]->ast_nodes[j], components_soa.imports_soa[i]->ast_nodes[j]->attribute_array.attributes[components_soa.imports_soa[i]->ast_nodes[j]->attribute_array.name_attr_index]);
+                    print_tag_attr_error(components_soa.contents[i], components_soa.uses_soa[i]->ast_nodes[j], components_soa.uses_soa[i]->ast_nodes[j]->attribute_array.attributes[components_soa.uses_soa[i]->ast_nodes[j]->attribute_array.name_attr_index]);
 
                     assert(0);
                 }
 
-                /* Check that imported components actually exist */
+                /* Check that used components actually exist */
                 boolean component_exists = false;
-                uint32_t imported_component_index = 0;
+                uint32_t used_component_index = 0;
 
-                ASTNode *import_ast_node = components_soa.imports_soa[i]->ast_nodes[j]; /*
-                                                                                         Component AST starting at the currently iterated component import.
-                                                                                         Bellow example for Component `foo` and currently iterated component import `bar`:
+                ASTNode *use_ast_node = components_soa.uses_soa[i]->ast_nodes[j]; /*
+                                                                                         Component AST starting at the currently iterated component use.
+                                                                                         Bellow example for Component `foo` and currently iterated component use `bar`:
                                                                                          
                                                                                           <x-def name="foo">
                                                                                               <div>
@@ -1680,42 +1680,42 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
 
                 uint32_t k;
                 for (k = 0; k < components_soa.count; k++) {
-                    if (strncmp(import_name, components_soa.names[k], strlen(import_name)) == 0) {
-                        imported_component_index = k;
+                    if (strncmp(use_name, components_soa.names[k], strlen(use_name)) == 0) {
+                        used_component_index = k;
                         component_exists = true;
 
                         /*
-                         Check that all attributes in the component import statement (except the 'name' attribute) 
-                         exist as placeholders in the imported component. 
+                         Check that all attributes in the component use statement (except the 'name' attribute) 
+                         exist as placeholders in the used component. 
                          NOTE: Placeholders may appear anywhere within the component definition.
                          
-                         component import:
+                         component use:
                               ...
                                  <x-use name="bar" fistname="John" input_style="class='text-[22px]/[28px] font-semibold'">
                                     ...                  ^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
                                  </x-use>
                               ...
                         
-                         imported component:
+                         used component:
                               <x-def name="bar">
                                   ...
                                   <input value="%fistname%" %input_style% />
                               </x-def>
                         */
                         uint32_t h;
-                        for (h = 0; h < import_ast_node->attribute_array.count; h++) {
-                            if (h == import_ast_node->attribute_array.name_attr_index) {
+                        for (h = 0; h < use_ast_node->attribute_array.count; h++) {
+                            if (h == use_ast_node->attribute_array.name_attr_index) {
                                 continue;
                             }
 
                             boolean found = false;
 
-                            String import_attr_name = import_ast_node->attribute_array.attributes[h].name;
+                            String use_attr_name = use_ast_node->attribute_array.attributes[h].name;
 
                             uint32_t f;
                             for (f = 0; f < components_soa.placeholders_soa[k]->count; f++) {
                                 /* TODO: make all strncmp to also check for lengths equality like in line bellow */
-                                if (strncmp(components_soa.placeholders_soa[k]->names[f], import_attr_name.data, import_attr_name.length) == 0 && strlen(components_soa.placeholders_soa[k]->names[f]) == import_attr_name.length) {
+                                if (strncmp(components_soa.placeholders_soa[k]->names[f], use_attr_name.data, use_attr_name.length) == 0 && strlen(components_soa.placeholders_soa[k]->names[f]) == use_attr_name.length) {
                                     found = true;
 
                                     break;
@@ -1734,9 +1734,9 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
 
                 if (component_exists) {
                     /*
-                     Check that the component import fills match the slots in the corresponding component.
+                     Check that the component use fills match the slots in the corresponding component.
                      
-                     component import:
+                     component use:
                           ...
                              <x-use name="bar">
                                  <x-fill name="fistname">
@@ -1748,7 +1748,7 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                              </x-use>
                           ...
                     
-                     imported component:
+                     used component:
                           <x-def name="bar">
                               ... 
                               <p>
@@ -1760,21 +1760,21 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                               ...
                           </x-def>
                     */
-                    uint32_t fill_count = components_soa.imports_soa[i]->fills_soa[j].count;
-                    FillSOA *fills_soa = &components_soa.imports_soa[i]->fills_soa[j];
+                    uint32_t fill_count = components_soa.uses_soa[i]->fills_soa[j].count;
+                    FillSOA *fills_soa = &components_soa.uses_soa[i]->fills_soa[j];
                     uint32_t h;
                     for (h = 0; h < fill_count; h++) {
                         char *fill = fills_soa->names[h];
 
                         boolean slot_exists = false;
-                        uint32_t imported_component_slot_index = 0;
+                        uint32_t used_component_slot_index = 0;
 
-                        if (components_soa.slots_soa[imported_component_index]) {
+                        if (components_soa.slots_soa[used_component_index]) {
                             uint32_t f;
-                            for (f = 0; f < components_soa.slots_soa[imported_component_index]->count; f++) {
-                                if (strncmp(components_soa.slots_soa[imported_component_index]->names[f], fill, strlen(fill)) == 0) {
+                            for (f = 0; f < components_soa.slots_soa[used_component_index]->count; f++) {
+                                if (strncmp(components_soa.slots_soa[used_component_index]->names[f], fill, strlen(fill)) == 0) {
                                     slot_exists = true;
-                                    imported_component_slot_index = f;
+                                    used_component_slot_index = f;
                                     break;
                                 }
                             }
@@ -1786,12 +1786,12 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                         }
                     }
                 } else {
-                    char error[] = "Component you are trying to import does not exist";
+                    char error[] = "Component you are trying to use does not exist";
                     printf("%s:\n", error);
                     printf("    file: %.*s\n", (int)components_soa.file_paths[i].length, components_soa.file_paths[i].data);
-                    printf("    line: %d\n", components_soa.imports_soa[i]->ast_nodes[j]->line_number);
+                    printf("    line: %d\n", components_soa.uses_soa[i]->ast_nodes[j]->line_number);
                     printf("\n");
-                    print_tag_attr_error(components_soa.contents[i], components_soa.imports_soa[i]->ast_nodes[j], components_soa.imports_soa[i]->ast_nodes[j]->attribute_array.attributes[components_soa.imports_soa[i]->ast_nodes[j]->attribute_array.name_attr_index]);
+                    print_tag_attr_error(components_soa.contents[i], components_soa.uses_soa[i]->ast_nodes[j], components_soa.uses_soa[i]->ast_nodes[j]->attribute_array.attributes[components_soa.uses_soa[i]->ast_nodes[j]->attribute_array.name_attr_index]);
 
                     assert(0);
                 }
