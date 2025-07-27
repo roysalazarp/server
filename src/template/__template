@@ -1621,7 +1621,7 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
         print_components_soa(&components_soa, i);
         char *component_name = components_soa.names[i];
 
-        if (components_soa.uses_soa[i]) { /* Does the component have any uses? If the component at index `i` in the SOA has no uses, this should be NULL because memory was never allocated. */
+        if (components_soa.uses_soa[i]) { /* Does the component have any imports? If the component at index `i` in the SOA has no imports, this should be NULL because memory was never allocated. */
             uint32_t num_uses = components_soa.uses_soa[i]->count;
 
             uint32_t j;
@@ -1638,7 +1638,7 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                     assert(0);
                 }
 
-                /* Check that used components actually exist */
+                /* Check that imported components actually exist */
                 boolean component_exists = false;
                 uint32_t used_component_index = 0;
 
