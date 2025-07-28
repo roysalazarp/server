@@ -55,6 +55,7 @@ int main() {
     }
 
     ark_validate_components(array_of_filepaths, array_of_file_contents, num_of_filepaths);
+    ark_compile_templates(array_of_filepaths, array_of_file_contents, num_of_filepaths);
     
     int code;
     while (1) {
