@@ -47,8 +47,8 @@ const char html_attr_key_token[256] = {
 #define XFOR            0x782D666F72000000 /* "x-for"  */
 
 typedef struct {
-    size_t start;
-    size_t end;
+    uint32_t start;
+    uint32_t end;
 } Range;
 
 typedef struct {
@@ -57,6 +57,14 @@ typedef struct {
     uint8_t xfill;
     uint8_t xfor;
 } OpenClose;
+
+typedef struct Template Template;
+struct Template {
+    Template *next;
+    char *name;
+    Range markup;
+    uint32_t file_idx;
+};
 
 typedef enum {
     TOKEN_INVALID,
@@ -83,12 +91,12 @@ typedef struct {
 typedef struct {
     String file_path;
     String file_content;
-    size_t cursor;
-    size_t bol; /* beginning of line */
-    size_t line_number;
+    uint32_t cursor;
+    uint32_t bol; /* beginning of line */
+    uint32_t line_number;
 } Lexer;
 
-size_t find_eol(size_t pos, char *text, size_t text_length) {    
+uint32_t find_eol(uint32_t pos, char *text, uint32_t text_length) {    
     for (; pos < text_length; ++pos) {
         if (text[pos] == '\n') {
             return pos;
@@ -98,7 +106,7 @@ size_t find_eol(size_t pos, char *text, size_t text_length) {
     return 0;
 }
 
-size_t find_bol(size_t pos, char *text) {    
+uint32_t find_bol(uint32_t pos, char *text) {    
     for (; pos > 0; --pos) {
         if (text[pos] == '\n') {
             return pos + 1;
@@ -122,32 +130,41 @@ uint8_t strlen_u64(uint64_t x) {
     return count;
 }
 
-void print_tag_error(String file_path, String file_content, size_t line_number, size_t bol, Range identifier, char error_msg[] ) {
+void print_tag_error(String file_path, String file_content, uint32_t line_number, uint32_t bol, Range identifier, char error_msg[] ) {
     printf("%s:\n", error_msg);
-    printf("    file: %.*s\n", (int)file_path.length, file_path.data);
-    printf("    line: %lu\n", line_number);
+    printf("    file: %.*s\n", file_path.length, file_path.data);
+    printf("    line: %d\n", line_number);
     printf("\n");
 
     /* print previous line */
     if (line_number > 1) {
-        size_t prev_bol = find_bol(bol - 2, file_content.data);
-        size_t prev_line_length = (bol - 1) - prev_bol;
-        printf("    %lu|  %.*s\n", line_number - 1, (int)prev_line_length, &file_content.data[prev_bol]);
+        uint32_t prev_bol = find_bol(bol - 2, file_content.data);
+        uint32_t prev_line_length = (bol - 1) - prev_bol;
+        printf("    %d|  %.*s\n", line_number - 1, prev_line_length, &file_content.data[prev_bol]);
     }
     
     /* current line */
-    size_t eol = find_eol(bol, file_content.data, file_content.length);
-    size_t current_line_length = eol - bol;
-    printf("    %lu|  %.*s\033[31m%.*s\033[0m%.*s\n", line_number, (int)(identifier.start - bol), &file_content.data[bol], (int)(identifier.end - identifier.start), &file_content.data[identifier.start], (int)(eol - identifier.end), &file_content.data[identifier.end]);
+    uint32_t eol = find_eol(bol, file_content.data, file_content.length);
+    uint32_t current_line_length = eol - bol;
+    printf("    %d|  %.*s\033[31m%.*s\033[0m%.*s\n", line_number, (identifier.start - bol), &file_content.data[bol], (identifier.end - identifier.start), &file_content.data[identifier.start], (eol - identifier.end), &file_content.data[identifier.end]);
 
     /* next line */
     if (eol < file_content.length) {
-        size_t next_bol = eol + 1;
-        size_t next_eol = find_eol(next_bol, file_content.data, file_content.length);
-        size_t next_line_length = next_eol - next_bol;
-        printf("    %lu|  %.*s\n", line_number + 1, (int)next_line_length, &file_content.data[next_bol]);
+        uint32_t next_bol = eol + 1;
+        uint32_t next_eol = find_eol(next_bol, file_content.data, file_content.length);
+        uint32_t next_line_length = next_eol - next_bol;
+        printf("    %d|  %.*s\n", line_number + 1, next_line_length, &file_content.data[next_bol]);
     }
 
+    printf("\n");
+}
+
+void print_list(Template* head) {
+    Template* current = head;
+    while (current != NULL) {
+        printf("%s -> ", current->name);
+        current = current->next;
+    }
     printf("\n");
 }
 
@@ -164,14 +181,14 @@ void print_tag_error(String file_path, String file_content, size_t line_number, 
 
 - Error if recursive import.
 */
-int ark_validate_components(char **array_of_filepaths, char **file_content_array, uint32_t array_length) {
-    uint64_t i;
+int ark_validate_templates(char **array_of_filepaths, char **file_content_array, uint32_t array_length) {
+    uint32_t i;
 
     Memory *memory = reserve_memory(PAGE_SIZE);
 
     uint32_t *html_file_mask = NULL;
 
-    size_t mask_size = array_length / U32_BITS;
+    uint32_t mask_size = array_length / U32_BITS;
     mask_size = mask_size < 1 ? 1 : mask_size; /* ensure a minimum */
 
     html_file_mask = memory_alloc(memory, mask_size * sizeof(uint32_t));
@@ -186,8 +203,11 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
         }
     }
 
-    uint32_t components_count = 0;
     uint64_t parent_identifier = 0;
+
+    Template *template_head = NULL;
+    Template *prev_template = NULL;
+    Template *template = NULL;
 
     for (i = 0; i < array_length; i++) {
         if (IS_U32_BIT_OFF(html_file_mask, i)) {
@@ -212,6 +232,7 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
 
         while (lexer.cursor < lexer.file_content.length) {
             Token token = {0};
+            String name = {0};
 
             uint8_t ch = 0; /* character */
             uint8_t prev_ch = 0;
@@ -302,6 +323,7 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
 
                         token.tag.type = TAG_CLOSING;
                         lexer.cursor++; /* skip '>' */
+                        token.tag.markup.end = lexer.cursor;
                     } else if (sec_prev_ch == '<') { /* if true we encounter <x- which indicates TAG_OPENING or TAG_SELFCLOSING */
                         token.tag.markup.start = lexer.cursor - 2;
 
@@ -340,10 +362,8 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                         uint8_t _prev_ch = 0;
                         
                         uint8_t attr_tk = 0;
-                        size_t str_start = 0;
+                        uint32_t str_start = 0;
                         uint8_t quotation = 0;
-
-                        boolean has_name = false;
 
                         while (true) {
                             String attr_name = {0};
@@ -499,7 +519,7 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                             exit_attr_parsing:;
                             if (attr_name.data == NULL && attr_value.data == NULL) {
                                 /** no more attrs */
-                                if (!has_name) {
+                                if (!name.data) {
                                     /* print error! */
                                     assert(0);
                                 }
@@ -513,7 +533,7 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                                 attr_name.data[2] == 'm' && 
                                 attr_name.data[3] == 'e') 
                             {
-                                has_name = true;
+                                name = attr_value;
                             } else {
                                 if (token.kind != TOKEN_XUSE) {
                                     assert(0);
@@ -563,18 +583,29 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                 case TOKEN_XDEF: {
                     if (token.tag.type == TAG_OPENING) {
                         if (oc.xdef) {
-                            printf("\n");
                             assert(0);
                         }
                         if (inside_xuse) {
-                            printf("\n");
                             assert(0);
                             /* Error: x-use can only have direct child x-fill */
                             inside_xuse = false;
                         }
                         oc.xdef += 1;
+                        template = memory_alloc(memory, sizeof(Template));
+                        template->file_idx = i;
+                        template->markup.start = token.tag.markup.start;
+                        template->name = memory_alloc(memory, name.length + 1);
+                        memcpy(template->name, name.data, name.length);                        
+                        if (!prev_template) {
+                            template_head = template;
+                            prev_template = template;
+                        } else {
+                            prev_template->next = template;
+                            prev_template = template;
+                        }
                     } else if (token.tag.type == TAG_CLOSING) {
                         oc.xdef -= 1;
+                        template->markup.end = token.tag.markup.end;
                     }
                     break;
                 }
@@ -582,7 +613,6 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                     if (token.tag.type == TAG_OPENING) {
                         oc.xuse += 1;
                         if (inside_xuse) {
-                            printf("\n");
                             assert(0);
                             /* Error: x-use can only have direct child x-fill */
                         }
@@ -599,7 +629,6 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                         assert(0);
                     }
                     if (inside_xuse) {
-                        printf("\n");
                         assert(0);
                         /* Error: x-use can only have direct child x-fill */
                     }
@@ -609,7 +638,6 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                     if (token.tag.type == TAG_OPENING) {
                         oc.xfill += 1;
                         if (!inside_xuse) {
-                            printf("\n");
                             assert(0);
                             /* Error: x-fill must be first child of x-use */
                         }
@@ -625,7 +653,6 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                         assert(0);
                     }
                     if (inside_xuse) {
-                        printf("\n");
                         assert(0);
                         /* Error: x-use can only have direct child x-fill */
                     }
@@ -635,7 +662,6 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                     if (token.tag.type == TAG_OPENING) {
                         oc.xfor += 1;
                         if (inside_xuse) {
-                            printf("\n");
                             assert(0);
                             /* Error: x-use can only have direct child x-fill */
                             inside_xuse = false;
@@ -649,37 +675,33 @@ int ark_validate_components(char **array_of_filepaths, char **file_content_array
                     break;
                 }
             }
-
-            printf("\n");
         }
     
         if (oc.xdef | oc.xuse | oc.xfill | oc.xfor) {
             if (oc.xdef) {
-                printf("\n");
                 assert(0);
                 /* print error: forgot to close oc.xdef amount of xdef tag */
             }
             if (oc.xuse) {
-                printf("\n");
                 assert(0);
                 /* print error: forgot to close oc.xuse amount of xuse tag */
             }
             if (oc.xfill) {
-                printf("\n");
                 assert(0);
                 /* print error: forgot to close oc.xfill amount of xfill tag */
             }
             if (oc.xfor) {
-                printf("\n");
                 assert(0);
                 /* print error: forgot to close oc.xfor amount of xfor tag */
             }
         }
-
-        printf("\n");
     }
+
+    print_list(template_head);
 
     return 0;
 }
 
-int ark_compile_templates(char **array_of_filepaths, char **file_content_array, uint32_t array_length) {}
+int ark_compile_templates(char **array_of_filepaths, char **file_content_array, uint32_t array_length) {
+    return 0;
+}

@@ -763,7 +763,7 @@ Lexer lexer_init(char *file_path, size_t file_path_length, char *content, size_t
     return lexer;
 }
 
-int ark_validate_components(char **array_of_filepaths, char **file_content_array, uint32_t array_length) {
+int ark_validate_templates(char **array_of_filepaths, char **file_content_array, uint32_t array_length) {
     uint32_t i;
 
     Memory *memory = reserve_memory(PAGE_SIZE * 100);
