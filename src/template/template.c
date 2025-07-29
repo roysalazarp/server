@@ -47,6 +47,11 @@ const char html_attr_key_token[256] = {
 #define XFOR            0x782D666F72000000 /* "x-for"  */
 
 typedef struct {
+    String name;
+    String value;
+} Attr;
+
+typedef struct {
     uint32_t start;
     uint32_t end;
 } Range;
@@ -75,8 +80,9 @@ typedef enum {
     TOKEN_XVAL,
     TOKEN_XFOR,
     TOKEN_PLACEHOLDER,
-    TOKEN_EOF
+    TOKEN_END
 } TokenKind;
+
 typedef struct {
     enum { TAG_INVALID, TAG_OPENING, TAG_CLOSING, TAG_SELFCLOSING } type;
     Range markup;
@@ -95,6 +101,11 @@ typedef struct {
     uint32_t bol; /* beginning of line */
     uint32_t line_number;
 } Lexer;
+
+typedef struct {
+    String component;
+    uint32_t cursor;
+} CompileLexer;
 
 uint32_t find_eol(uint32_t pos, char *text, uint32_t text_length) {    
     for (; pos < text_length; ++pos) {
@@ -130,6 +141,158 @@ uint8_t strlen_u64(uint64_t x) {
     return count;
 }
 
+/* returns 1 if reached EOF */
+int parse_next_tag_attr(Attr *attr, char *html, uint32_t html_length, uint32_t *cursor) {    
+    uint8_t attr_tk = 0;
+    uint32_t str_start = 0;
+    uint8_t quotation = 0;
+
+    uint8_t _ch = html[*cursor];
+    uint8_t _prev_ch = 0;
+
+    while (true) {
+        _ch = html[*cursor] & 255;
+        switch (attr_tk) {
+            case HTML_ATTR_START: {
+                while (true) {
+                    uint8_t _next_ch = html[*cursor + 1];
+                    if (_ch == '>') {
+                        attr_tk = HTML_ATTR_END;
+                        break;
+                    } else if (_ch == '/' && _next_ch == '>') {
+                        (*cursor)++; /* skip '/' */
+                        attr_tk = HTML_ATTR_END;
+                        break;
+                    } else if (html_attr_key_token[_ch]) {
+                        attr_tk = HTML_ATTR_START_KEY;
+                        break;
+                    } else if (isspace(_ch)) {
+                        if (++(*cursor) == html_length) {
+                            return 1;
+                        }
+                        
+                        _ch = html[*cursor] & 255;
+                    } else {
+                        assert(0);
+                        return -1;
+                    }
+                }
+                break;
+            }
+            case HTML_ATTR_START_KEY: {
+                while (true) {
+                    if (html_attr_key_token[_ch]) {
+                        attr->name.data = &html[*cursor];
+                        attr_tk = HTML_ATTR_KEY;
+                        str_start = *cursor;
+                        break;
+                    } else if (isspace(_ch)) {
+                        if (++(*cursor) == html_length) {
+                            return 1;
+                        }
+
+                        _ch = html[*cursor] & 255;
+                    } else {
+                        assert(0);
+                        return -1;
+                    }
+                }
+                break;
+            }
+            case HTML_ATTR_KEY: {
+                while (true) {
+                    if (isspace(_ch) || _ch == '=') {
+                        attr->name.length = *cursor - str_start;
+                        attr_tk = HTML_ATTR_EQUALS;
+                        break;
+                    } else if (html_attr_key_token[_ch]) {
+                        if (++(*cursor) == html_length) {
+                            return 1;
+                        }
+                        
+                        _ch = html[*cursor] & 255;
+                    }   else {
+                        assert(0);
+                        return -1;
+                    }
+                }
+                break;
+            }
+            case HTML_ATTR_EQUALS: {
+                while (true) {
+                    if (_ch == '=') {
+                        (*cursor)++; /* skip '=' */
+                        attr_tk = HTML_ATTR_START_VALUE;
+                        break;
+                    } else if (isspace(_ch)) {
+                        if (++(*cursor) == html_length) {
+                            return 1;
+                        }
+
+                        _ch = html[*cursor] & 255;
+                    } else {
+                        assert(0);
+                        return -1;
+                    }
+                }
+                break;
+            }
+            case HTML_ATTR_START_VALUE: {
+                while (true) {
+                    if (_ch == '"' ||  _ch == '\'') {
+                        quotation = _ch;
+                        (*cursor)++; /* skip quotation */
+                        attr->value.data = &html[*cursor];
+                        attr_tk = HTML_ATTR_VALUE;
+                        str_start = *cursor;
+                        break;
+                    } else if (isspace(_ch)) {
+                        if (++(*cursor) == html_length) {
+                            return 1;
+                        }
+
+                        _ch = html[*cursor] & 255;
+                    }   else {
+                        assert(0);
+                        return -1;
+                    }
+                }
+                break;
+            }
+            case HTML_ATTR_VALUE: {
+                char prev = html[*cursor - 1] & 255;
+                while (true) {
+                    if (_ch == quotation && prev != '\\') {
+                        attr->value.length = *cursor - str_start;
+                        (*cursor)++; /* skip quotation */
+                        attr_tk = HTML_ATTR_END;
+                        break;
+                    } else if (_ch & 255) {
+                        prev = _ch;
+
+                        if (++(*cursor) == html_length) {
+                            return 1;
+                        }
+
+                        _ch = html[*cursor] & 255;
+                    }   else {
+                        assert(0);
+                        return -1;
+                    }
+                }
+                break;
+            }
+            case HTML_ATTR_END: {
+                return 0;
+            }
+        }
+
+        _prev_ch = _ch;
+    }
+
+    __builtin_unreachable();
+}
+
 void print_tag_error(String file_path, String file_content, uint32_t line_number, uint32_t bol, Range identifier, char error_msg[] ) {
     printf("%s:\n", error_msg);
     printf("    file: %.*s\n", file_path.length, file_path.data);
@@ -159,13 +322,261 @@ void print_tag_error(String file_path, String file_content, uint32_t line_number
     printf("\n");
 }
 
-void print_list(Template* head) {
-    Template* current = head;
-    while (current != NULL) {
-        printf("%s -> ", current->name);
-        current = current->next;
+int recursive_compile_template(Template *tmpl_head, char **file_content_array, char *component, uint32_t component_length, char **ct, uint32_t *cursor) {    
+    CompileLexer lexer = {0};
+    lexer.component.data = component;
+    lexer.component.length = component_length;
+    lexer.cursor = 0;
+
+    while (lexer.cursor < lexer.component.length) {
+        Token token = {0};
+        String name = {0};
+
+        uint8_t ch = 0; /* character */
+        uint8_t prev_ch = 0;
+
+        while (true) {
+            if (++lexer.cursor == lexer.component.length) {
+                token.kind = TOKEN_END;
+                goto _done_token;
+            }
+
+            ch = lexer.component.data[lexer.cursor];
+            if ((prev_ch == 'x' && ch == '-') || (prev_ch == '{' && ch == '{')) {
+                if (prev_ch == '{' && ch == '{') {
+                    token.tag.markup.start = lexer.cursor - 1;
+                    token.kind = TOKEN_PLACEHOLDER;
+
+                    uint8_t _ch = ch;
+                    uint8_t _prev_ch = prev_ch;
+                    while (true) {
+                        if (++lexer.cursor == lexer.component.length) {
+                            token.kind = TOKEN_END;
+                            goto _done_token;
+                        }
+                        
+                        _ch = lexer.component.data[lexer.cursor];
+
+                        if (_prev_ch == '}' && _ch == '}') {
+                            token.tag.markup.end = lexer.cursor;
+                            lexer.cursor++; /* skip second '}' */
+                            goto _done_token;
+                        }
+                        _prev_ch = _ch;
+                    }
+                }
+
+                uint8_t sec_prev_ch = lexer.component.data[lexer.cursor - 2];
+                uint8_t thr_prev_ch = lexer.cursor > 2 ? lexer.component.data[lexer.cursor - 3] : 0;
+
+                if ((thr_prev_ch == '<') && (sec_prev_ch == '/')) { /* if true we encounter </x- which indicates TAG_CLOSING */
+                    token.tag.markup.start = lexer.cursor - 3;
+                    (*cursor) -= 3;
+                    
+                    lexer.cursor--;
+                    uint64_t kind = *(uint64_t *)(lexer.component.data + lexer.cursor);
+
+                    if ((__builtin_bswap64(kind) & MASK_5) == XDEF) {
+                        token.kind = TOKEN_XDEF;
+                        token.identifier = XDEF;
+                    } 
+                    else if ((__builtin_bswap64(kind) & MASK_5) == XUSE) {
+                        token.kind = TOKEN_XUSE;
+                        token.identifier = XUSE;
+                    }
+                    else if ((__builtin_bswap64(kind) & MASK_6) == XSLOT) {
+                        token.kind = TOKEN_XSLOT;
+                        token.identifier = XSLOT;
+                    }
+                    else if ((__builtin_bswap64(kind) & MASK_6) == XFILL) {
+                        token.kind = TOKEN_XFILL;
+                        token.identifier = XFILL;
+                    }
+                    else if ((__builtin_bswap64(kind) & MASK_5) == XVAL) {
+                        token.kind = TOKEN_XVAL;
+                        token.identifier = XVAL;
+                    }
+                    else if ((__builtin_bswap64(kind) & MASK_5) == XFOR) {
+                        token.kind = TOKEN_XFOR;
+                        token.identifier = XFOR;
+                    }
+
+                    uint8_t identifier_length = strlen_u64(token.identifier);
+                    lexer.cursor += identifier_length;
+
+                    uint8_t _ch = lexer.component.data[lexer.cursor];
+                    while (true) {
+                        if (isspace(_ch)) {
+                            if (++lexer.cursor == lexer.component.length) {
+                                token.kind = TOKEN_END;
+                                goto _done_token;
+                            }
+
+                            _ch = lexer.component.data[lexer.cursor];
+                        } else {
+                            break;
+                        }
+                    }
+
+                    assert(_ch == '>');
+
+                    token.tag.type = TAG_CLOSING;
+                    lexer.cursor++; /* skip '>' */
+                    token.tag.markup.end = lexer.cursor;
+                } else if (sec_prev_ch == '<') { /* if true we encounter <x- which indicates TAG_OPENING or TAG_SELFCLOSING */
+                    token.tag.markup.start = lexer.cursor - 2;
+                    (*cursor) -= 2;
+
+                    lexer.cursor--;
+                    uint64_t kind = *(uint64_t *)(lexer.component.data + lexer.cursor);
+
+                    if ((__builtin_bswap64(kind) & MASK_5) == XDEF) {
+                        token.kind = TOKEN_XDEF;
+                        token.identifier = XDEF;
+                    } 
+                    else if ((__builtin_bswap64(kind) & MASK_5) == XUSE) {
+                        token.kind = TOKEN_XUSE;
+                        token.identifier = XUSE;
+                    }
+                    else if ((__builtin_bswap64(kind) & MASK_6) == XSLOT) {
+                        token.kind = TOKEN_XSLOT;
+                        token.identifier = XSLOT;
+                    }
+                    else if ((__builtin_bswap64(kind) & MASK_6) == XFILL) {
+                        token.kind = TOKEN_XFILL;
+                        token.identifier = XFILL;
+                    }
+                    else if ((__builtin_bswap64(kind) & MASK_5) == XVAL) {
+                        token.kind = TOKEN_XVAL;
+                        token.identifier = XVAL;
+                    }
+                    else if ((__builtin_bswap64(kind) & MASK_5) == XFOR) {
+                        token.kind = TOKEN_XFOR;
+                        token.identifier = XFOR;
+                    }
+
+                    uint8_t identifier_length = strlen_u64(token.identifier);
+                    lexer.cursor += identifier_length;
+
+                    uint8_t _ch = 0;
+                    uint8_t _prev_ch = 0;
+
+                    while (true) {                            
+                        Attr attr = {0};
+                        parse_next_tag_attr(&attr, lexer.component.data, lexer.component.length, &lexer.cursor);
+                        
+                        _ch = lexer.component.data[lexer.cursor];
+                        _prev_ch = lexer.component.data[lexer.cursor - 1];
+
+                        if (attr.name.data == NULL && attr.value.data == NULL) {
+                            /** no more attrs */
+                            if (!name.data) {
+                                /* print error! */
+                                assert(0);
+                            }
+
+                            break;
+                        }
+
+                        if (attr.name.length == 4 &&
+                            attr.name.data[0] == 'n' && 
+                            attr.name.data[1] == 'a' && 
+                            attr.name.data[2] == 'm' && 
+                            attr.name.data[3] == 'e') 
+                        {
+                            name = attr.value;
+                        } else {
+                            if (token.kind != TOKEN_XUSE) {
+                                assert(0);
+                                /* print error! */
+                            }
+                        }
+                    }
+
+                    assert(_ch == '>');
+                    
+                    if (_prev_ch == '/') {
+                        token.tag.type = TAG_SELFCLOSING;
+                        lexer.cursor++; /* skip '>' */
+                        token.tag.markup.end = lexer.cursor;
+                    } else {
+                        token.tag.type = TAG_OPENING;
+                        lexer.cursor++; /* skip '>' */
+                        token.tag.markup.end = lexer.cursor;
+                    }
+
+                    _prev_ch = _ch;
+                }
+
+                if (token.kind != TOKEN_PLACEHOLDER) {
+                    assert(token.tag.type);
+                }
+
+                if (token.tag.type && token.kind) {
+                    break;
+                }
+            }
+
+            (*ct)[(*cursor)++] = ch;
+            printf("%c", ch);
+
+            prev_ch = ch;
+        }
+
+        _done_token:;
+
+        switch (token.kind) {
+            case TOKEN_END: {
+                break;
+            }
+            case TOKEN_INVALID: {
+                break;
+            }
+            case TOKEN_PLACEHOLDER: {
+                break;
+            }
+            case TOKEN_XUSE: {
+                Template *t = tmpl_head;
+                while (t != NULL) {
+                    if (strncmp(t->name, name.data, name.length) == 0 && strlen(t->name) == name.length) {
+                        if (token.tag.type == TAG_SELFCLOSING) {
+                            recursive_compile_template(tmpl_head, file_content_array, (file_content_array[t->file_idx] + t->markup.start), (t->markup.end - t->markup.start), ct, cursor);
+                        } else {
+                            /* x-use constains x-fill(s) */
+                            /* 
+                                [LEFT OFF HERE]
+                                IMPORTANT!
+                                NOTE: maybe to make parsing more simple, x-slot and x-fill tags 
+                                do not have a name attr, but are just rendered in order, meaning
+                                first x-fill corresponds to first x-slot and so on and so forth
+                            */
+                        }
+                        
+                        break;
+                    }
+                    t = t->next;
+                }
+                break;
+            }
+            case TOKEN_XSLOT: {
+                break;
+            }
+            case TOKEN_XFILL: {
+                break;
+            }
+            case TOKEN_XVAL: {
+                break;
+            }
+            case TOKEN_XFOR: {
+                break;
+            }
+            default: {
+                break;
+            }
+        }
     }
-    printf("\n");
+
+    return 0;
 }
 
 /*
@@ -203,11 +614,9 @@ int ark_validate_templates(char **array_of_filepaths, char **file_content_array,
         }
     }
 
-    uint64_t parent_identifier = 0;
-
-    Template *template_head = NULL;
-    Template *prev_template = NULL;
-    Template *template = NULL;
+    Template *tmpl_head = NULL;
+    Template *prev_tmpl = NULL;
+    Template *tmpl = NULL;
 
     for (i = 0; i < array_length; i++) {
         if (IS_U32_BIT_OFF(html_file_mask, i)) {
@@ -239,7 +648,7 @@ int ark_validate_templates(char **array_of_filepaths, char **file_content_array,
 
             while (true) {
                 if (++lexer.cursor == lexer.file_content.length) {
-                    token.kind = TOKEN_EOF;
+                    token.kind = TOKEN_END;
                     goto done_token;
                 }
 
@@ -253,7 +662,7 @@ int ark_validate_templates(char **array_of_filepaths, char **file_content_array,
                         uint8_t _prev_ch = prev_ch;
                         while (true) {
                             if (++lexer.cursor == lexer.file_content.length) {
-                                token.kind = TOKEN_EOF;
+                                token.kind = TOKEN_END;
                                 goto done_token;
                             }
                             
@@ -262,7 +671,7 @@ int ark_validate_templates(char **array_of_filepaths, char **file_content_array,
                             if (_prev_ch == '}' && _ch == '}') {
                                 token.tag.markup.end = lexer.cursor;
                                 lexer.cursor++; /* skip second '}' */
-                                break;
+                                goto done_token;
                             }
                             _prev_ch = _ch;
                         }
@@ -309,7 +718,7 @@ int ark_validate_templates(char **array_of_filepaths, char **file_content_array,
                         while (true) {
                             if (isspace(_ch)) {
                                 if (++lexer.cursor == lexer.file_content.length) {
-                                    token.kind = TOKEN_EOF;
+                                    token.kind = TOKEN_END;
                                     goto done_token;
                                 }
 
@@ -358,166 +767,17 @@ int ark_validate_templates(char **array_of_filepaths, char **file_content_array,
                         uint8_t identifier_length = strlen_u64(token.identifier);
                         lexer.cursor += identifier_length;
 
-                        uint8_t _ch = lexer.file_content.data[lexer.cursor];
+                        uint8_t _ch = 0;
                         uint8_t _prev_ch = 0;
-                        
-                        uint8_t attr_tk = 0;
-                        uint32_t str_start = 0;
-                        uint8_t quotation = 0;
 
-                        while (true) {
-                            String attr_name = {0};
-                            String attr_value = {0};
-            
-                            while (true) {
-                                _ch = lexer.file_content.data[lexer.cursor] & 255;
-                                switch (attr_tk) {
-                                    case HTML_ATTR_START: {
-                                        while (true) {
-                                            uint8_t _next_ch = lexer.file_content.data[lexer.cursor + 1];
-                                            if (_ch == '>') {
-                                                attr_tk = HTML_ATTR_END;
-                                                break;
-                                            } else if (_ch == '/' && _next_ch == '>') {
-                                                lexer.cursor++; /* skip '/' */
-                                                attr_tk = HTML_ATTR_END;
-                                                break;
-                                            } else if (html_attr_key_token[_ch]) {
-                                                attr_tk = HTML_ATTR_START_KEY;
-                                                break;
-                                            } else if (isspace(_ch)) {
-                                                if (++lexer.cursor == lexer.file_content.length) {
-                                                    token.kind = TOKEN_EOF;
-                                                    goto done_token;
-                                                }
-                                                
-                                                _ch = lexer.file_content.data[lexer.cursor] & 255;
-                                            } else {
-                                                assert(0);
-                                                return -1;
-                                            }
-                                        }
-                                        break;
-                                    }
-                                    case HTML_ATTR_START_KEY: {
-                                        while (true) {
-                                            if (html_attr_key_token[_ch]) {
-                                                attr_name.data = &lexer.file_content.data[lexer.cursor];
-                                                attr_tk = HTML_ATTR_KEY;
-                                                str_start = lexer.cursor;
-                                                break;
-                                            } else if (isspace(_ch)) {
-                                                if (++lexer.cursor == lexer.file_content.length) {
-                                                    token.kind = TOKEN_EOF;
-                                                    goto done_token;
-                                                }
-
-                                                _ch = lexer.file_content.data[lexer.cursor] & 255;
-                                            } else {
-                                                assert(0);
-                                                return -1;
-                                            }
-                                        }
-                                        break;
-                                    }
-                                    case HTML_ATTR_KEY: {
-                                        while (true) {
-                                            if (isspace(_ch) || _ch == '=') {
-                                                attr_name.length = lexer.cursor - str_start;
-                                                attr_tk = HTML_ATTR_EQUALS;
-                                                break;
-                                            } else if (html_attr_key_token[_ch]) {
-                                                if (++lexer.cursor == lexer.file_content.length) {
-                                                    token.kind = TOKEN_EOF;
-                                                    goto done_token;
-                                                }
-                                                
-                                                _ch = lexer.file_content.data[lexer.cursor] & 255;
-                                            }   else {
-                                                assert(0);
-                                                return -1;
-                                            }
-                                        }
-                                        break;
-                                    }
-                                    case HTML_ATTR_EQUALS: {
-                                        while (true) {
-                                            if (_ch == '=') {
-                                                lexer.cursor++; /* skip '=' */
-                                                attr_tk = HTML_ATTR_START_VALUE;
-                                                break;
-                                            } else if (isspace(_ch)) {
-                                                if (++lexer.cursor == lexer.file_content.length) {
-                                                    token.kind = TOKEN_EOF;
-                                                    goto done_token;
-                                                }
-
-                                                _ch = lexer.file_content.data[lexer.cursor] & 255;
-                                            } else {
-                                                assert(0);
-                                                return -1;
-                                            }
-                                        }
-                                        break;
-                                    }
-                                    case HTML_ATTR_START_VALUE: {
-                                        while (true) {
-                                            if (_ch == '"' ||  _ch == '\'') {
-                                                quotation = _ch;
-                                                lexer.cursor++; /* skip quotation */
-                                                attr_value.data = &lexer.file_content.data[lexer.cursor];
-                                                attr_tk = HTML_ATTR_VALUE;
-                                                str_start = lexer.cursor;
-                                                break;
-                                            } else if (isspace(_ch)) {
-                                                if (++lexer.cursor == lexer.file_content.length) {
-                                                    token.kind = TOKEN_EOF;
-                                                    goto done_token;
-                                                }
-
-                                                _ch = lexer.file_content.data[lexer.cursor] & 255;
-                                            }   else {
-                                                assert(0);
-                                                return -1;
-                                            }
-                                        }
-                                        break;
-                                    }
-                                    case HTML_ATTR_VALUE: {
-                                        char prev = lexer.file_content.data[lexer.cursor - 1] & 255;
-                                        while (true) {
-                                            if (_ch == quotation && prev != '\\') {
-                                                attr_value.length = lexer.cursor - str_start;
-                                                lexer.cursor++; /* skip quotation */
-                                                attr_tk = HTML_ATTR_END;
-                                                break;
-                                            } else if (_ch & 255) {
-                                                prev = _ch;
-
-                                                if (++lexer.cursor == lexer.file_content.length) {
-                                                    token.kind = TOKEN_EOF;
-                                                    goto done_token;
-                                                }
-
-                                                _ch = lexer.file_content.data[lexer.cursor] & 255;
-                                            }   else {
-                                                assert(0);
-                                                return -1;
-                                            }
-                                        }
-                                        break;
-                                    }
-                                    case HTML_ATTR_END: {
-                                        attr_tk = HTML_ATTR_START;
-                                        goto exit_attr_parsing;
-                                    }
-                                }
-
-                                _prev_ch = _ch;
-                            }
+                        while (true) {                            
+                            Attr attr = {0};
+                            parse_next_tag_attr(&attr, lexer.file_content.data, lexer.file_content.length, &lexer.cursor);
                             
-                            exit_attr_parsing:;
-                            if (attr_name.data == NULL && attr_value.data == NULL) {
+                            _ch = lexer.file_content.data[lexer.cursor];
+                            _prev_ch = lexer.file_content.data[lexer.cursor - 1];
+
+                            if (attr.name.data == NULL && attr.value.data == NULL) {
                                 /** no more attrs */
                                 if (!name.data) {
                                     /* print error! */
@@ -527,13 +787,13 @@ int ark_validate_templates(char **array_of_filepaths, char **file_content_array,
                                 break;
                             }
 
-                            if (attr_name.length == 4 &&
-                                attr_name.data[0] == 'n' && 
-                                attr_name.data[1] == 'a' && 
-                                attr_name.data[2] == 'm' && 
-                                attr_name.data[3] == 'e') 
+                            if (attr.name.length == 4 &&
+                                attr.name.data[0] == 'n' && 
+                                attr.name.data[1] == 'a' && 
+                                attr.name.data[2] == 'm' && 
+                                attr.name.data[3] == 'e') 
                             {
-                                name = attr_value;
+                                name = attr.value;
                             } else {
                                 if (token.kind != TOKEN_XUSE) {
                                     assert(0);
@@ -571,7 +831,7 @@ int ark_validate_templates(char **array_of_filepaths, char **file_content_array,
             done_token:;
 
             switch (token.kind) {
-                case TOKEN_EOF: {
+                case TOKEN_END: {
                     break;
                 }
                 case TOKEN_INVALID: {
@@ -591,21 +851,21 @@ int ark_validate_templates(char **array_of_filepaths, char **file_content_array,
                             inside_xuse = false;
                         }
                         oc.xdef += 1;
-                        template = memory_alloc(memory, sizeof(Template));
-                        template->file_idx = i;
-                        template->markup.start = token.tag.markup.start;
-                        template->name = memory_alloc(memory, name.length + 1);
-                        memcpy(template->name, name.data, name.length);                        
-                        if (!prev_template) {
-                            template_head = template;
-                            prev_template = template;
+                        tmpl = memory_alloc(memory, sizeof(Template));
+                        tmpl->file_idx = i;
+                        tmpl->markup.start = token.tag.markup.end;
+                        tmpl->name = memory_alloc(memory, name.length + 1);
+                        memcpy(tmpl->name, name.data, name.length);
+                        if (!prev_tmpl) {
+                            tmpl_head = tmpl;
+                            prev_tmpl = tmpl;
                         } else {
-                            prev_template->next = template;
-                            prev_template = template;
+                            prev_tmpl->next = tmpl;
+                            prev_tmpl = tmpl;
                         }
                     } else if (token.tag.type == TAG_CLOSING) {
                         oc.xdef -= 1;
-                        template->markup.end = token.tag.markup.end;
+                        tmpl->markup.end = token.tag.markup.start;
                     }
                     break;
                 }
@@ -697,7 +957,17 @@ int ark_validate_templates(char **array_of_filepaths, char **file_content_array,
         }
     }
 
-    print_list(template_head);
+    Template* t = tmpl_head;
+    while (t != NULL) {
+        char *ct = LOCK_MEMORY(memory); /* compiled template */
+        uint32_t cursor = 0;
+
+        recursive_compile_template(tmpl_head, file_content_array, file_content_array[t->file_idx] + t->markup.start, t->markup.end - t->markup.start, &ct, &cursor);
+
+        UNLOCK_MEMORY(memory, &ct[cursor]);
+
+        t = t->next;
+    }
 
     return 0;
 }

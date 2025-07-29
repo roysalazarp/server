@@ -18,6 +18,8 @@
 #define PAGE_SIZE KB(4)
 
 int main() {
+    setbuf(stdout, NULL);
+
     uint32_t i;
 
     ark_server_init((uint16_t)8080);
