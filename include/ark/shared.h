@@ -3,11 +3,15 @@
 
 #include <stdint.h>
 
-#define MASK_4        0xFFFFFFFF00000000
-#define MASK_5        0xFFFFFFFFFF000000
-#define MASK_6        0xFFFFFFFFFFFF0000
-#define MASK_7        0xFFFFFFFFFFFFFF00
-#define MASK_8        0xFFFFFFFFFFFFFFFF
+#define MASK32_2        0xFFFF0000
+#define MASK32_3        0xFFFFFF00
+#define MASK32_4        0xFFFFFFFF
+
+#define MASK64_4        0xFFFFFFFF00000000
+#define MASK64_5        0xFFFFFFFFFF000000
+#define MASK64_6        0xFFFFFFFFFFFF0000
+#define MASK64_7        0xFFFFFFFFFFFFFF00
+#define MASK64_8        0xFFFFFFFFFFFFFFFF
 
 #define KB(value) ((value) * 1024)
 #define MB(value) (KB(value) * 1024)

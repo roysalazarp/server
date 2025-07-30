@@ -412,21 +412,21 @@ int ark_retrive_request(ArkRequest *ark_request) {
 
                             uint64_t http_method = *(uint64_t *)ctx->client_request.buffer;
 
-                            if (((__builtin_bswap64(http_method) & MASK_4) == GET)   ||
-                                ((__builtin_bswap64(http_method) & MASK_5) == HEAD)  ||
-                                ((__builtin_bswap64(http_method) & MASK_6) == TRACE) ||
-                                ((__builtin_bswap64(http_method) & MASK_8) == CONNECT)) 
+                            if (((__builtin_bswap64(http_method) & MASK64_4) == GET)   ||
+                                ((__builtin_bswap64(http_method) & MASK64_5) == HEAD)  ||
+                                ((__builtin_bswap64(http_method) & MASK64_6) == TRACE) ||
+                                ((__builtin_bswap64(http_method) & MASK64_8) == CONNECT)) 
                             {
                                 /** HTTP requests with these methods can NOT contain a Content-Length header */
                                 assert(!has_content_length);
-                            } else if (((__builtin_bswap64(http_method) & MASK_4) == PUT)  ||
-                                       ((__builtin_bswap64(http_method) & MASK_5) == POST) ||
-                                       ((__builtin_bswap64(http_method) & MASK_6) == PATCH)) 
+                            } else if (((__builtin_bswap64(http_method) & MASK64_4) == PUT)  ||
+                                       ((__builtin_bswap64(http_method) & MASK64_5) == POST) ||
+                                       ((__builtin_bswap64(http_method) & MASK64_6) == PATCH)) 
                             {
                                 /** HTTP requests with these methods MUST contain a Content-Length header */
                                 assert(has_content_length);
-                            } else if (((__builtin_bswap64(http_method) & MASK_7) == DELETE) ||
-                                       ((__builtin_bswap64(http_method) & MASK_8) == OPTIONS)) 
+                            } else if (((__builtin_bswap64(http_method) & MASK64_7) == DELETE) ||
+                                       ((__builtin_bswap64(http_method) & MASK64_8) == OPTIONS)) 
                             {
                                 /** There MAY be a Content-Length header */
                             }

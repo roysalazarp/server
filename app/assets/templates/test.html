@@ -13,11 +13,11 @@
 <x-def name="foo">
     <div class="foo">
         <x-use name="layout">
-            <x-fill name="content">
+            <x-fill>
                 <h1>Foo</h1>
                 <div>
                     <x-use name="bar" firstname="John">
-                        <x-fill name="lastname"> 
+                        <x-fill> 
                             Doe
                         </x-fill>
                     </x-use>
@@ -29,7 +29,7 @@
 
 <x-def name="layout">
     <div class="layout">
-        <x-slot name="content" />
+        <x-slot />
     </div>
 </x-def>
 
@@ -38,9 +38,9 @@
         <h2>{{ firstname }}</h2>
         <div>
             <x-use name="baz">
-                <x-fill name="text">
+                <x-fill>
                     <div>hahah</div>
-                    <x-slot name="lastname" />
+                    <x-slot />
                 </x-fill>
             </x-use>
         </div>
@@ -50,26 +50,7 @@
 <x-def name="baz">
     <div class="baz">
         <div>
-            <x-slot name="text" />
+            <x-slot />
         </div>
     </div>
 </x-def>
-
-<div class="foo">
-    <div class="layout">
-        <h1>Foo</h1>
-        <div>
-            <div class="bar">
-                <h2>John</h2>
-                <div>
-                    <div class="baz">
-                        <div>
-                            <div>hahah</div>
-                            Doe
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>

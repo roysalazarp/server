@@ -181,7 +181,7 @@ typedef struct {
 boolean is_html_path(char *path, size_t path_length) {
     uint64_t ext = *(uint64_t *)(path + path_length - 5 /* .html */);
 
-    if ((__builtin_bswap64(ext) & MASK_5) == HTML_EXTENSION) {
+    if ((__builtin_bswap64(ext) & MASK64_5) == HTML_EXTENSION) {
         return true;
     }
 
@@ -266,27 +266,27 @@ Token get_next_token(Lexer *lexer) {
 
             uint64_t kind = *(uint64_t *)(content + cursor);
 
-            if ((__builtin_bswap64(kind) & MASK_5) == XDEF) {
+            if ((__builtin_bswap64(kind) & MASK64_5) == XDEF) {
                 token.kind = TOKEN_XDEF;
                 token.identifier = XDEF;
             } 
-            else if ((__builtin_bswap64(kind) & MASK_5) == XUSE) {
+            else if ((__builtin_bswap64(kind) & MASK64_5) == XUSE) {
                 token.kind = TOKEN_XUSE;
                 token.identifier = XUSE;
             }
-            else if ((__builtin_bswap64(kind) & MASK_6) == XSLOT) {
+            else if ((__builtin_bswap64(kind) & MASK64_6) == XSLOT) {
                 token.kind = TOKEN_XSLOT;
                 token.identifier = XSLOT;
             }
-            else if ((__builtin_bswap64(kind) & MASK_6) == XFILL) {
+            else if ((__builtin_bswap64(kind) & MASK64_6) == XFILL) {
                 token.kind = TOKEN_XFILL;
                 token.identifier = XFILL;
             }
-            else if ((__builtin_bswap64(kind) & MASK_5) == XVAL) {
+            else if ((__builtin_bswap64(kind) & MASK64_5) == XVAL) {
                 token.kind = TOKEN_XVAL;
                 token.identifier = XVAL;
             }
-            else if ((__builtin_bswap64(kind) & MASK_5) == XFOR) {
+            else if ((__builtin_bswap64(kind) & MASK64_5) == XFOR) {
                 token.kind = TOKEN_XFOR;
                 token.identifier = XFOR;
             }
@@ -763,7 +763,7 @@ Lexer lexer_init(char *file_path, size_t file_path_length, char *content, size_t
     return lexer;
 }
 
-int ark_validate_templates(char **array_of_filepaths, char **file_content_array, uint32_t array_length) {
+int ark_compile_templates(char **array_of_filepaths, char **file_content_array, uint32_t array_length) {
     uint32_t i;
 
     Memory *memory = reserve_memory(PAGE_SIZE * 100);

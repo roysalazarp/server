@@ -56,7 +56,6 @@ int main() {
         array_of_file_contents[i] = file_content;
     }
 
-    ark_validate_templates(array_of_filepaths, array_of_file_contents, num_of_filepaths);
     ark_compile_templates(array_of_filepaths, array_of_file_contents, num_of_filepaths);
     
     int code;
