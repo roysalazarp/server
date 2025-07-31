@@ -121,7 +121,14 @@ typedef struct {
 typedef struct {
     String component;
     uint32_t cursor;
+    boolean started;
 } CompileLexer;
+
+typedef struct {
+    CompileLexer *lexer_list;
+    uint32_t length;
+    uint32_t i;
+} CompileLexerList;
 
 uint32_t find_eol(uint32_t pos, char *text, uint32_t text_length) {    
     for (; pos < text_length; ++pos) {
@@ -163,31 +170,30 @@ int parse_next_tag_attr(Attr *attr, char *html, uint32_t html_length, uint32_t *
     uint32_t str_start = 0;
     uint8_t quotation = 0;
 
-    uint8_t _ch = html[*cursor];
-    uint8_t _prev_ch = 0;
+    uint8_t ch = html[*cursor];
 
     while (true) {
-        _ch = html[*cursor] & 255;
+        ch = html[*cursor] & 255;
         switch (attr_tk) {
             case HTML_ATTR_START: {
                 while (true) {
                     uint8_t _next_ch = html[*cursor + 1];
-                    if (_ch == '>') {
+                    if (ch == '>') {
                         attr_tk = HTML_ATTR_END;
                         break;
-                    } else if (_ch == '/' && _next_ch == '>') {
+                    } else if (ch == '/' && _next_ch == '>') {
                         (*cursor)++; /* skip '/' */
                         attr_tk = HTML_ATTR_END;
                         break;
-                    } else if (html_attr_key_token[_ch]) {
+                    } else if (html_attr_key_token[ch]) {
                         attr_tk = HTML_ATTR_START_KEY;
                         break;
-                    } else if (isspace(_ch)) {
+                    } else if (isspace(ch)) {
                         if (++(*cursor) == html_length) {
                             return 1;
                         }
                         
-                        _ch = html[*cursor] & 255;
+                        ch = html[*cursor] & 255;
                     } else {
                         assert(0);
                         return -1;
@@ -197,17 +203,17 @@ int parse_next_tag_attr(Attr *attr, char *html, uint32_t html_length, uint32_t *
             }
             case HTML_ATTR_START_KEY: {
                 while (true) {
-                    if (html_attr_key_token[_ch]) {
+                    if (html_attr_key_token[ch]) {
                         attr->name.data = &html[*cursor];
                         attr_tk = HTML_ATTR_KEY;
                         str_start = *cursor;
                         break;
-                    } else if (isspace(_ch)) {
+                    } else if (isspace(ch)) {
                         if (++(*cursor) == html_length) {
                             return 1;
                         }
 
-                        _ch = html[*cursor] & 255;
+                        ch = html[*cursor] & 255;
                     } else {
                         assert(0);
                         return -1;
@@ -217,16 +223,16 @@ int parse_next_tag_attr(Attr *attr, char *html, uint32_t html_length, uint32_t *
             }
             case HTML_ATTR_KEY: {
                 while (true) {
-                    if (isspace(_ch) || _ch == '=') {
+                    if (isspace(ch) || ch == '=') {
                         attr->name.length = *cursor - str_start;
                         attr_tk = HTML_ATTR_EQUALS;
                         break;
-                    } else if (html_attr_key_token[_ch]) {
+                    } else if (html_attr_key_token[ch]) {
                         if (++(*cursor) == html_length) {
                             return 1;
                         }
                         
-                        _ch = html[*cursor] & 255;
+                        ch = html[*cursor] & 255;
                     }   else {
                         assert(0);
                         return -1;
@@ -236,16 +242,16 @@ int parse_next_tag_attr(Attr *attr, char *html, uint32_t html_length, uint32_t *
             }
             case HTML_ATTR_EQUALS: {
                 while (true) {
-                    if (_ch == '=') {
+                    if (ch == '=') {
                         (*cursor)++; /* skip '=' */
                         attr_tk = HTML_ATTR_START_VALUE;
                         break;
-                    } else if (isspace(_ch)) {
+                    } else if (isspace(ch)) {
                         if (++(*cursor) == html_length) {
                             return 1;
                         }
 
-                        _ch = html[*cursor] & 255;
+                        ch = html[*cursor] & 255;
                     } else {
                         assert(0);
                         return -1;
@@ -255,19 +261,19 @@ int parse_next_tag_attr(Attr *attr, char *html, uint32_t html_length, uint32_t *
             }
             case HTML_ATTR_START_VALUE: {
                 while (true) {
-                    if (_ch == '"' ||  _ch == '\'') {
-                        quotation = _ch;
+                    if (ch == '"' ||  ch == '\'') {
+                        quotation = ch;
                         (*cursor)++; /* skip quotation */
                         attr->value.data = &html[*cursor];
                         attr_tk = HTML_ATTR_VALUE;
                         str_start = *cursor;
                         break;
-                    } else if (isspace(_ch)) {
+                    } else if (isspace(ch)) {
                         if (++(*cursor) == html_length) {
                             return 1;
                         }
 
-                        _ch = html[*cursor] & 255;
+                        ch = html[*cursor] & 255;
                     }   else {
                         assert(0);
                         return -1;
@@ -278,19 +284,19 @@ int parse_next_tag_attr(Attr *attr, char *html, uint32_t html_length, uint32_t *
             case HTML_ATTR_VALUE: {
                 char prev = html[*cursor - 1] & 255;
                 while (true) {
-                    if (_ch == quotation && prev != '\\') {
+                    if (ch == quotation && prev != '\\') {
                         attr->value.length = *cursor - str_start;
                         (*cursor)++; /* skip quotation */
                         attr_tk = HTML_ATTR_END;
                         break;
-                    } else if (_ch & 255) {
-                        prev = _ch;
+                    } else if (ch & 255) {
+                        prev = ch;
 
                         if (++(*cursor) == html_length) {
                             return 1;
                         }
 
-                        _ch = html[*cursor] & 255;
+                        ch = html[*cursor] & 255;
                     }   else {
                         assert(0);
                         return -1;
@@ -302,8 +308,6 @@ int parse_next_tag_attr(Attr *attr, char *html, uint32_t html_length, uint32_t *
                 return 0;
             }
         }
-
-        _prev_ch = _ch;
     }
 
     __builtin_unreachable();
@@ -495,28 +499,28 @@ int get_token(NextToken *next_token, char *html, uint32_t html_length, uint32_t 
     return 0;
 }
 
-int recursive_compile_template(Template *tmpl_head, char **file_content_array, char *component, uint32_t component_length, char **ct, uint32_t *cursor) {    
-    CompileLexer lexer = {0};
-    lexer.component.data = component;
-    lexer.component.length = component_length;
-    lexer.cursor = 0;
+int recursive_compile_template(CompileLexerList *cll, Template *tmpl_head, char **file_content_array, char **ct, uint32_t *cursor) {
+    uint8_t ch = 0;
 
-    boolean started = false;
+    boolean jump = false;
 
-    while (lexer.cursor < lexer.component.length) {
-        if (started) { /* TODO: think of a way to remove this check */
-            if (++lexer.cursor == lexer.component.length) {
+    while (cll->lexer_list[cll->i].cursor < cll->lexer_list[cll->i].component.length) {
+        if (cll->lexer_list[cll->i].started) { /* TODO: think of a way to remove this check */
+            if (++cll->lexer_list[cll->i].cursor == cll->lexer_list[cll->i].component.length) {
                 break;
             }
         } else {
-            started = true;
-        }        
+            cll->lexer_list[cll->i].started = true;
+        }
 
         NextToken nt = {0};
 
-        get_token(&nt, lexer.component.data, lexer.component.length, &lexer.cursor);
+        get_token(&nt, cll->lexer_list[cll->i].component.data, cll->lexer_list[cll->i].component.length, &cll->lexer_list[cll->i].cursor);
         
-        (*ct)[(*cursor)++] = lexer.component.data[lexer.cursor];
+        ch = cll->lexer_list[cll->i].component.data[cll->lexer_list[cll->i].cursor];
+        
+        (*ct)[(*cursor)++] = ch;
+        printf("%c", ch);
 
         switch (nt.token.kind) {
             case TOKEN_END: {
@@ -529,32 +533,38 @@ int recursive_compile_template(Template *tmpl_head, char **file_content_array, c
                 break;
             }
             case TOKEN_XUSE: {
-                Template *t = tmpl_head;
-                while (t != NULL) {
-                    if (strncmp(t->name, nt.name.data, nt.name.length) == 0 && strlen(t->name) == nt.name.length) {
-                        if (nt.token.tag.type == TAG_SELFCLOSING) {
-                            recursive_compile_template(tmpl_head, file_content_array, (file_content_array[t->file_idx] + t->markup.start), (t->markup.end - t->markup.start), ct, cursor);
-                        } else {
-                            /* x-use constains x-fill(s) */
-                            /* 
-                                [LEFT OFF HERE]
-                                IMPORTANT!
-                                NOTE: maybe to make parsing more simple, x-slot and x-fill tags 
-                                do not have a name attr, but are just rendered in order, meaning
-                                first x-fill corresponds to first x-slot and so on and so forth
-                            */
+                if (nt.token.tag.type == TAG_OPENING) {
+                    Template *t = tmpl_head;
+                    while (t != NULL) {
+                        if (strncmp(t->name, nt.name.data, nt.name.length) == 0 && strlen(t->name) == nt.name.length) {
+                            cll->i++;
+                            cll->lexer_list[cll->i].component.data = file_content_array[t->file_idx] + t->markup.start;
+                            cll->lexer_list[cll->i].component.length = t->markup.end - t->markup.start;
+                            cll->lexer_list[cll->i].cursor = 0;
+                            continue_use:;
+                            if (jump) {
+                                cll->i++;
+                                jump = false;
+                            }
+                            recursive_compile_template(cll, tmpl_head, file_content_array, ct, cursor);
+    
+                            break;
                         }
-                        
-                        break;
+                        t = t->next;
                     }
-                    t = t->next;
                 }
                 break;
             }
             case TOKEN_XSLOT: {
+                cll->i--;
+                return 0;
                 break;
             }
             case TOKEN_XFILL: {
+                if (nt.token.tag.type == TAG_CLOSING) {
+                    jump = true;
+                    goto continue_use;
+                }
                 break;
             }
             case TOKEN_XVAL: {
@@ -569,6 +579,7 @@ int recursive_compile_template(Template *tmpl_head, char **file_content_array, c
         }
     }
 
+    cll->i--;
     return 0;
 }
 
@@ -615,6 +626,8 @@ int ark_compile_templates(char **array_of_filepaths, char **file_content_array, 
             TURN_ON_U32_BIT(html_file_mask, i);
         }
     }
+
+    uint32_t component_count = 0;
 
     Template *tmpl_head = NULL;
     Template *prev_tmpl = NULL;
@@ -667,6 +680,7 @@ int ark_compile_templates(char **array_of_filepaths, char **file_content_array, 
                 }
                 case TOKEN_XDEF: {
                     if (nt.token.tag.type == TAG_OPENING) {
+                        component_count++;
                         if (oc.xdef) {
                             assert(0);
                         }
@@ -783,13 +797,24 @@ int ark_compile_templates(char **array_of_filepaths, char **file_content_array, 
     }
 
     print_list(tmpl_head);
+    
+    CompileLexerList cll = {0};
+    cll.length = component_count;
+    cll.lexer_list = memory_alloc(memory, cll.length * sizeof(CompileLexer));
 
     Template* t = tmpl_head;
     while (t != NULL) {
         char *ct = LOCK_MEMORY(memory); /* compiled template */
         uint32_t cursor = 0;
+        
+        printf("COMPONENT:\n");
 
-        recursive_compile_template(tmpl_head, file_content_array, file_content_array[t->file_idx] + t->markup.start, t->markup.end - t->markup.start, &ct, &cursor);
+        cll.i = 0;
+        cll.lexer_list[cll.i].component.data = file_content_array[t->file_idx] + t->markup.start;
+        cll.lexer_list[cll.i].component.length = t->markup.end - t->markup.start;
+        cll.lexer_list[cll.i].cursor = 0;
+
+        recursive_compile_template(&cll, tmpl_head, file_content_array, &ct, &cursor);
 
         UNLOCK_MEMORY(memory, &ct[cursor]);
 

@@ -1,17 +1,5 @@
-<x-def name="zoo">
-    <div class="zoo">
-        <x-use name="boo" />
-    </div>
-</x-def>
-
-<x-def name="boo">
-    <div class="boo">
-        hello boo!
-    </div>
-</x-def>
-
 <x-def name="foo">
-    <div class="foo">
+    <section class="foo">
         <x-use name="layout">
             <x-fill>
                 <h1>Foo</h1>
@@ -24,18 +12,18 @@
                 </div>
             </x-fill>
         </x-use>
-    </div>
+    </section>
 </x-def>
 
 <x-def name="layout">
-    <div class="layout">
+    <span class="layout">
         <x-slot />
-    </div>
+    </span>
 </x-def>
 
 <x-def name="bar">
-    <div class="bar">
-        <h2>{{ firstname }}</h2>
+    <body class="bar">
+        <h2>firstname</h2>
         <div>
             <x-use name="baz">
                 <x-fill>
@@ -44,13 +32,51 @@
                 </x-fill>
             </x-use>
         </div>
-    </div>
+    </body>
 </x-def>
 
 <x-def name="baz">
-    <div class="baz">
+    <section class="baz">
         <div>
             <x-slot />
         </div>
-    </div>
+    </section>
 </x-def>
+
+<section class="foo">
+    <span class="layout">
+        <h1>Foo</h1>
+        <div>
+            <body class="bar">
+                <h2>{{ firstname }}</h2>
+                <div>
+                    <section class="baz">
+                        <div>
+                            <div>hahah</div>
+                            Doe
+                        </div>
+                    </section>
+                </div>
+            </body>
+        </div>
+    </span>
+</section>
+
+<section class="foo">
+    <span class="layout">
+        <h1>Foo</h1>
+        <div>
+            <body class="bar">
+                <h2></h2>
+                <div>
+                    <section class="baz">
+                        <div>
+                            <div>hahah</div>
+                            Doe
+                        </div>
+                    </section>
+                </div>
+            </body>
+        </div>
+    [</span>]
+</section>
