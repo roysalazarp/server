@@ -73,9 +73,8 @@ typedef struct {
 typedef struct Template Template;
 struct Template {
     Template *next;
-    char *name;
-    Range markup;
-    uint32_t file_idx;
+    String name;
+    String component;
 };
 
 typedef enum {
@@ -118,17 +117,10 @@ typedef struct {
     uint32_t line_number;
 } Lexer;
 
-typedef struct {
-    String component;
-    uint32_t cursor;
-    boolean started;
-} CompileLexer;
-
-typedef struct {
-    CompileLexer *lexer_list;
-    uint32_t length;
-    uint32_t i;
-} CompileLexerList;
+uint32_t component_count = 0;
+uint32_t max_component_name = 0;
+uint32_t block_size = 0;
+void *component_lookup = NULL;
 
 uint32_t find_eol(uint32_t pos, char *text, uint32_t text_length) {    
     for (; pos < text_length; ++pos) {
@@ -499,94 +491,24 @@ int get_token(NextToken *next_token, char *html, uint32_t html_length, uint32_t 
     return 0;
 }
 
-int recursive_compile_template(CompileLexerList *cll, Template *tmpl_head, char **file_content_array, char **ct, uint32_t *cursor) {
-    uint8_t ch = 0;
-
-    boolean jump = false;
-
-    while (cll->lexer_list[cll->i].cursor < cll->lexer_list[cll->i].component.length) {
-        if (cll->lexer_list[cll->i].started) { /* TODO: think of a way to remove this check */
-            if (++cll->lexer_list[cll->i].cursor == cll->lexer_list[cll->i].component.length) {
-                break;
-            }
-        } else {
-            cll->lexer_list[cll->i].started = true;
-        }
-
-        NextToken nt = {0};
-
-        get_token(&nt, cll->lexer_list[cll->i].component.data, cll->lexer_list[cll->i].component.length, &cll->lexer_list[cll->i].cursor);
+int find_component(Template **t, String component_name) {
+    uint32_t i;
+    for (i = 0; i < component_count; i++) {
+        char *name = (char *)((uint8_t *)component_lookup + (i * block_size));
         
-        ch = cll->lexer_list[cll->i].component.data[cll->lexer_list[cll->i].cursor];
-        
-        (*ct)[(*cursor)++] = ch;
-        printf("%c", ch);
-
-        switch (nt.token.kind) {
-            case TOKEN_END: {
-                break;
-            }
-            case TOKEN_INVALID: {
-                break;
-            }
-            case TOKEN_PLACEHOLDER: {
-                break;
-            }
-            case TOKEN_XUSE: {
-                if (nt.token.tag.type == TAG_OPENING) {
-                    Template *t = tmpl_head;
-                    while (t != NULL) {
-                        if (strncmp(t->name, nt.name.data, nt.name.length) == 0 && strlen(t->name) == nt.name.length) {
-                            cll->i++;
-                            cll->lexer_list[cll->i].component.data = file_content_array[t->file_idx] + t->markup.start;
-                            cll->lexer_list[cll->i].component.length = t->markup.end - t->markup.start;
-                            cll->lexer_list[cll->i].cursor = 0;
-                            continue_use:;
-                            if (jump) {
-                                cll->i++;
-                                jump = false;
-                            }
-                            recursive_compile_template(cll, tmpl_head, file_content_array, ct, cursor);
-    
-                            break;
-                        }
-                        t = t->next;
-                    }
-                }
-                break;
-            }
-            case TOKEN_XSLOT: {
-                cll->i--;
-                return 0;
-                break;
-            }
-            case TOKEN_XFILL: {
-                if (nt.token.tag.type == TAG_CLOSING) {
-                    jump = true;
-                    goto continue_use;
-                }
-                break;
-            }
-            case TOKEN_XVAL: {
-                break;
-            }
-            case TOKEN_XFOR: {
-                break;
-            }
-            default: {
-                break;
-            }
+        if (strncmp(name, component_name.data, component_name.length) == 0 && strlen(name) == component_name.length) {
+            *t = *((Template **)(name + max_component_name));
+            return 0;
         }
     }
 
-    cll->i--;
-    return 0;
+    return -1;
 }
 
 void print_list(Template* head) {
     Template* current = head;
     while (current != NULL) {
-        printf("%s -> ", current->name);
+        printf("%.*s -> ", current->name.length, current->name.data);
         current = current->next;
     }
     printf("\n");
@@ -626,8 +548,6 @@ int ark_compile_templates(char **array_of_filepaths, char **file_content_array, 
             TURN_ON_U32_BIT(html_file_mask, i);
         }
     }
-
-    uint32_t component_count = 0;
 
     Template *tmpl_head = NULL;
     Template *prev_tmpl = NULL;
@@ -691,10 +611,12 @@ int ark_compile_templates(char **array_of_filepaths, char **file_content_array, 
                         }
                         oc.xdef += 1;
                         tmpl = memory_alloc(memory, sizeof(Template));
-                        tmpl->file_idx = i;
-                        tmpl->markup.start = nt.token.tag.markup.end;
-                        tmpl->name = memory_alloc(memory, nt.name.length + 1);
-                        memcpy(tmpl->name, nt.name.data, nt.name.length);
+                        tmpl->component.data = &lexer.file_content.data[nt.token.tag.markup.end];
+                        tmpl->name = nt.name;
+                        if (tmpl->name.length > max_component_name) {
+                            max_component_name = tmpl->name.length;
+                        }
+
                         if (!prev_tmpl) {
                             tmpl_head = tmpl;
                             prev_tmpl = tmpl;
@@ -704,7 +626,7 @@ int ark_compile_templates(char **array_of_filepaths, char **file_content_array, 
                         }
                     } else if (nt.token.tag.type == TAG_CLOSING) {
                         oc.xdef -= 1;
-                        tmpl->markup.end = nt.token.tag.markup.start;
+                        tmpl->component.length= &lexer.file_content.data[nt.token.tag.markup.start] - tmpl->component.data;
                     }
                     break;
                 }
@@ -795,30 +717,37 @@ int ark_compile_templates(char **array_of_filepaths, char **file_content_array, 
             }
         }
     }
+    
+    max_component_name += 1; /* to account for null terminator */
 
     print_list(tmpl_head);
     
-    CompileLexerList cll = {0};
-    cll.length = component_count;
-    cll.lexer_list = memory_alloc(memory, cll.length * sizeof(CompileLexer));
+    block_size = max_component_name + sizeof(Template *);
+    component_lookup = memory_alloc(memory, component_count * block_size);
+    
+    Template* t_current = tmpl_head;
+    for (i = 0; i < component_count; i++) {
+        char *name = (char *)((uint8_t *)component_lookup + (i * block_size));
+        Template **t = (Template **)(name + max_component_name);
 
-    Template* t = tmpl_head;
-    while (t != NULL) {
-        char *ct = LOCK_MEMORY(memory); /* compiled template */
+        memcpy(name, t_current->name.data, t_current->name.length);
+
+        *t = t_current;
+
+        t_current = t_current->next;
+    }
+
+    for (i = 0; i < component_count; i++) {
+        char *_ = (char *)((uint8_t *)component_lookup + (i * block_size));
+        Template *t = *((Template **)(_ + max_component_name));
+
+        char *ct = LOCK_MEMORY(memory);
         uint32_t cursor = 0;
         
         printf("COMPONENT:\n");
-
-        cll.i = 0;
-        cll.lexer_list[cll.i].component.data = file_content_array[t->file_idx] + t->markup.start;
-        cll.lexer_list[cll.i].component.length = t->markup.end - t->markup.start;
-        cll.lexer_list[cll.i].cursor = 0;
-
-        recursive_compile_template(&cll, tmpl_head, file_content_array, &ct, &cursor);
-
+        /* compile template here */
+        
         UNLOCK_MEMORY(memory, &ct[cursor]);
-
-        t = t->next;
     }
 
     return 0;
