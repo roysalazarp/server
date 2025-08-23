@@ -89,8 +89,10 @@ typedef enum {
     TOKEN_END
 } TokenKind;
 
+typedef enum  { TAG_INVALID, TAG_OPENING, TAG_CLOSING, TAG_SELFCLOSING } TagType;
+
 typedef struct {
-    enum { TAG_INVALID, TAG_OPENING, TAG_CLOSING, TAG_SELFCLOSING } type;
+    TagType type;
     Range markup;
 } Tag;
 typedef struct {
@@ -370,8 +372,16 @@ int skip_whitespace(char *text, uint32_t text_length, uint32_t *cursor) {
     uint8_t ch = text[*cursor];
     while (true) {
         if (isspace(ch)) {
-            if (++(*cursor) == text_length) {
-                return 1;
+            ++(*cursor);
+
+            if (text_length) {
+                if (*cursor == text_length) {
+                    return 1;
+                }
+            } else {
+                if (text[*cursor] == '\0') {
+                    return 1;
+                }
             }
 
             ch = text[*cursor];
@@ -381,6 +391,76 @@ int skip_whitespace(char *text, uint32_t text_length, uint32_t *cursor) {
     }
 
     __builtin_unreachable();
+}
+
+int get_next_tag(String *tag, char *ptr, uint64_t identifier, TagType tag_type) {
+    if (tag_type == TAG_INVALID) {
+        return -1;
+    }
+
+    uint32_t open_num = 0;
+
+    while (++ptr) {
+        uint32_t tk = *(uint32_t *)(ptr);
+
+        if ((__builtin_bswap32(tk) & MASK32_3) == XOPEN) {
+            char *tmp = ptr;
+            ptr++; /** skip '<' */
+            uint64_t x = *(uint64_t *)(ptr);
+            TokenType tt = token_type(x);
+            if (tt.identifier == identifier) {
+                ptr += strlen_u64(tt.identifier);
+                
+                uint32_t whitespace_count = 0;
+                skip_whitespace(ptr, 0, &whitespace_count);
+                
+                ptr += whitespace_count;
+
+                if (tag_type == TAG_OPENING) {
+                    ptr += 2; /** skip '/>' */
+                    tag->data = tmp;
+                    tag->length = ptr - tmp;
+                    return 0;
+                }
+                
+                if (tag_type == TAG_SELFCLOSING) {
+                    ptr++; /** skip '>' */
+                    tag->data = tmp;
+                    tag->length = ptr - tmp;
+                    return 0;
+                }
+
+                open_num++;
+            }
+        } else if ((__builtin_bswap32(tk) & MASK32_4) == XCLOSE) {
+            char *tmp = ptr;
+            ptr += 2; /** skip '</' */
+            uint64_t x = *(uint64_t *)(ptr);
+            TokenType tt = token_type(x);
+            if (tt.identifier == identifier) {
+                if (open_num == 0) {
+                    ptr += strlen_u64(tt.identifier);
+                    
+                    uint32_t whitespace_count = 0;
+                    skip_whitespace(ptr, 0, &whitespace_count);
+
+                    ptr += whitespace_count;
+                    ptr++; /** skip '<' */
+
+                    if (tag_type == TAG_CLOSING) {
+                        tag->data = tmp;
+                        tag->length = ptr - tmp;
+                        
+                        return 0;
+                    }
+                } else {
+                    open_num--;
+                }
+            }
+        }
+    }
+
+    return -1;
 }
 
 int get_token(NextToken *next_token, char *html, uint32_t html_length, uint32_t *cursor) {
@@ -744,8 +824,66 @@ int ark_compile_templates(char **array_of_filepaths, char **file_content_array, 
         char *ct = LOCK_MEMORY(memory);
         uint32_t cursor = 0;
         
-        printf("COMPONENT:\n");
-        /* compile template here */
+        memcpy(ct, t->component.data, t->component.length);
+
+        Lexer lexer = {0};
+
+        lexer.file_content.data = ct;
+        lexer.cursor = 0;
+        lexer.bol = 0;
+        lexer.line_number = 1;
+
+        uint32_t fill_count = 0;
+
+        while (lexer.file_content.data[lexer.cursor]) {
+            NextToken nt = {0};
+
+            get_token(&nt, lexer.file_content.data, lexer.file_content.length, &lexer.cursor);
+
+            switch (nt.token.kind) {
+                case TOKEN_XUSE: {
+                    Template *found = NULL;
+                    find_component(&found, nt.name);
+                    
+                    if (nt.token.tag.type == TAG_SELFCLOSING) {
+                        printf("%.*s\n", nt.name.length, nt.name.data);
+                        
+                        Range tag_markup = nt.token.tag.markup;
+
+                        char *insert_location = lexer.file_content.data + tag_markup.start;
+                        
+                        size_t substring_to_remove_length = tag_markup.end - tag_markup.start;
+
+                        char *substring_to_insert = found->component.data;
+                        size_t substring_to_insert_length = found->component.length;
+
+                        {
+                            /** Expand/Shrink space where new substring will inserted so it fits perfectly */
+                            char *dest = insert_location + substring_to_insert_length;
+                            char *src = insert_location + substring_to_remove_length;
+                            size_t chunk_length = strlen(lexer.file_content.data + tag_markup.end) + 1;
+                            memmove(dest, src, chunk_length);
+                        }
+
+                        memcpy(insert_location, substring_to_insert, substring_to_insert_length);
+
+                        lexer.cursor = tag_markup.start;
+                    }
+                    if (nt.token.tag.type == TAG_OPENING) {
+                        String tag = {0};
+                        get_next_tag(&tag, lexer.file_content.data + lexer.cursor, XFILL, TAG_OPENING);
+                        
+                        printf("\n");
+                    }
+                    break;
+                }
+                default: {
+                    break;
+                }
+            }
+
+            lexer.cursor++;
+        }
         
         UNLOCK_MEMORY(memory, &ct[cursor]);
     }

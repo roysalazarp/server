@@ -1,5 +1,8 @@
 <x-def name="foo">
     <section class="foo">
+        <div>
+            <x-use name="boo"/>
+        </div>
         <x-use name="layout">
             <x-fill>
                 <h1>Foo</h1>
@@ -39,6 +42,14 @@
     <section class="baz">
         <div>
             <x-slot />
+        </div>
+    </section>
+</x-def>
+
+<x-def name="boo">
+    <section class="boo">
+        <div>
+            boo!
         </div>
     </section>
 </x-def>
