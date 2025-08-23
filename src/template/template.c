@@ -416,14 +416,14 @@ int get_next_tag(String *tag, char *ptr, uint64_t identifier, TagType tag_type) 
                 
                 ptr += whitespace_count;
 
-                if (tag_type == TAG_OPENING) {
+                if (tag_type == TAG_SELFCLOSING) {
                     ptr += 2; /** skip '/>' */
                     tag->data = tmp;
                     tag->length = ptr - tmp;
                     return 0;
                 }
                 
-                if (tag_type == TAG_SELFCLOSING) {
+                if (tag_type == TAG_OPENING) {
                     ptr++; /** skip '>' */
                     tag->data = tmp;
                     tag->length = ptr - tmp;
@@ -833,7 +833,10 @@ int ark_compile_templates(char **array_of_filepaths, char **file_content_array, 
         lexer.bol = 0;
         lexer.line_number = 1;
 
-        uint32_t fill_count = 0;
+        uint32_t xfill_count = 0;
+
+        Template *importing = NULL;
+        uint32_t importing_cursor = 0;
 
         while (lexer.file_content.data[lexer.cursor]) {
             NextToken nt = {0};
@@ -842,20 +845,21 @@ int ark_compile_templates(char **array_of_filepaths, char **file_content_array, 
 
             switch (nt.token.kind) {
                 case TOKEN_XUSE: {
-                    Template *found = NULL;
-                    find_component(&found, nt.name);
+                    if (xfill_count) {
+                        break;
+                    }
+
+                    find_component(&importing, nt.name);
                     
-                    if (nt.token.tag.type == TAG_SELFCLOSING) {
-                        printf("%.*s\n", nt.name.length, nt.name.data);
-                        
+                    if (nt.token.tag.type == TAG_SELFCLOSING) {                        
                         Range tag_markup = nt.token.tag.markup;
 
                         char *insert_location = lexer.file_content.data + tag_markup.start;
                         
                         size_t substring_to_remove_length = tag_markup.end - tag_markup.start;
 
-                        char *substring_to_insert = found->component.data;
-                        size_t substring_to_insert_length = found->component.length;
+                        char *substring_to_insert = importing->component.data;
+                        size_t substring_to_insert_length = importing->component.length;
 
                         {
                             /** Expand/Shrink space where new substring will inserted so it fits perfectly */
@@ -869,13 +873,84 @@ int ark_compile_templates(char **array_of_filepaths, char **file_content_array, 
 
                         lexer.cursor = tag_markup.start;
                     }
+
                     if (nt.token.tag.type == TAG_OPENING) {
-                        String tag = {0};
-                        get_next_tag(&tag, lexer.file_content.data + lexer.cursor, XFILL, TAG_OPENING);
+                        Range opening_tag_markup = nt.token.tag.markup;
                         
-                        printf("\n");
+                        char *insert_location = lexer.file_content.data + opening_tag_markup.start;
+                        
+                        size_t substring_to_remove_length = opening_tag_markup.end - opening_tag_markup.start;
+
+                        char *substring_to_insert = importing->component.data;
+                        String xslot_selfclosing_tag = {0};
+                        get_next_tag(&xslot_selfclosing_tag, importing->component.data, XSLOT, TAG_SELFCLOSING);
+                        size_t substring_to_insert_length = xslot_selfclosing_tag.data - substring_to_insert;
+
+                        importing_cursor = (xslot_selfclosing_tag.data + xslot_selfclosing_tag.length) - importing->component.data;
+
+                        {
+                            /** Expand/Shrink space where new substring will inserted so it fits perfectly */
+                            char *dest = insert_location + substring_to_insert_length;
+                            char *src = insert_location + substring_to_remove_length;
+                            size_t chunk_length = strlen(lexer.file_content.data + opening_tag_markup.end) + 1;
+                            memmove(dest, src, chunk_length);
+                        }
+
+                        memcpy(insert_location, substring_to_insert, substring_to_insert_length);
+
+                        lexer.cursor = (insert_location + substring_to_insert_length) - lexer.file_content.data;
+                    }
+
+                    if (nt.token.tag.type == TAG_CLOSING) {
+                        Range closing_tag_markup = nt.token.tag.markup;
+                        
+                        char *insert_location = lexer.file_content.data + closing_tag_markup.start;
+                        
+                        size_t substring_to_remove_length = closing_tag_markup.end - closing_tag_markup.start;
+
+                        char *substring_to_insert = importing->component.data + importing_cursor;
+                        size_t substring_to_insert_length = importing->component.length - importing_cursor;
+
+                        {
+                            /** Expand/Shrink space where new substring will inserted so it fits perfectly */
+                            char *dest = insert_location + substring_to_insert_length;
+                            char *src = insert_location + substring_to_remove_length;
+                            size_t chunk_length = strlen(lexer.file_content.data + closing_tag_markup.end) + 1;
+                            memmove(dest, src, chunk_length);
+                        }
+
+                        memcpy(insert_location, substring_to_insert, substring_to_insert_length);
                     }
                     break;
+                }
+                case TOKEN_XFILL: {
+                    if (nt.token.tag.type == TAG_OPENING) {
+                        if (xfill_count == 0) {
+                            Range opening_tag_markup = nt.token.tag.markup;
+
+                            char *dest = lexer.file_content.data + opening_tag_markup.start;
+                            char *src = lexer.file_content.data + opening_tag_markup.end;
+                            size_t chunk_length = strlen(src) + 1;
+                            memmove(dest, src, chunk_length);
+                        }
+
+                        xfill_count++;
+                    }
+                    
+                    if (nt.token.tag.type == TAG_CLOSING) {
+                        xfill_count--;
+
+                        if (xfill_count == 0) {
+                            Range closing_tag_markup = nt.token.tag.markup;
+
+                            char *dest = lexer.file_content.data + closing_tag_markup.start;
+                            char *src = lexer.file_content.data + closing_tag_markup.end;
+                            size_t chunk_length = strlen(src) + 1;
+                            memmove(dest, src, chunk_length);
+
+                            lexer.cursor -= 1;
+                        }
+                    }
                 }
                 default: {
                     break;
