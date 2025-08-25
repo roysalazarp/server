@@ -5,6 +5,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <assert.h>
+#include <stdlib.h>
 
 #include "../../include/ark/shared.h"
 #include "../../include/ark/memory.h"
@@ -58,6 +59,20 @@ typedef struct {
     String value;
 } Attr;
 
+typedef struct AttrLLItem AttrLLItem;
+struct AttrLLItem {
+    AttrLLItem *next;
+    Attr attr;
+};
+
+typedef struct {
+    AttrLLItem *head;
+    uint32_t count;
+    uint32_t rendered;    
+    uint64_t identifier;
+    boolean in_use;
+} AttrLL;
+
 typedef struct {
     uint32_t start;
     uint32_t end;
@@ -95,6 +110,7 @@ typedef struct {
     TagType type;
     Range markup;
 } Tag;
+
 typedef struct {
     TokenKind kind;
     Tag tag; /* NOT used when TokenKind is TOKEN_PLACEHOLDER */
@@ -403,58 +419,79 @@ int get_next_tag(String *tag, char *ptr, uint64_t identifier, TagType tag_type) 
     while (++ptr) {
         uint32_t tk = *(uint32_t *)(ptr);
 
-        if ((__builtin_bswap32(tk) & MASK32_3) == XOPEN) {
-            char *tmp = ptr;
-            ptr++; /** skip '<' */
-            uint64_t x = *(uint64_t *)(ptr);
-            TokenType tt = token_type(x);
-            if (tt.identifier == identifier) {
-                ptr += strlen_u64(tt.identifier);
+        if (tag_type == TAG_CLOSING) {
+            if ((__builtin_bswap32(tk) & MASK32_2) == DOCB) {
+                char *tmp = ptr;
+                ptr += 2; /** skip "{{" */
                 
                 uint32_t whitespace_count = 0;
                 skip_whitespace(ptr, 0, &whitespace_count);
-                
                 ptr += whitespace_count;
-
-                if (tag_type == TAG_SELFCLOSING) {
-                    ptr += 2; /** skip '/>' */
-                    tag->data = tmp;
-                    tag->length = ptr - tmp;
-                    return 0;
+    
+                while (++ptr) {
+                    uint32_t dccb = *(uint32_t *)(ptr);
+                    if ((__builtin_bswap32(dccb) & MASK32_2) == DCCB) {
+                        ptr += 2; /** skip "}}" */
+                        tag->data = tmp;
+                        tag->length = ptr - tmp;
+                        return 0;
+                    }
                 }
-                
-                if (tag_type == TAG_OPENING) {
-                    ptr++; /** skip '>' */
-                    tag->data = tmp;
-                    tag->length = ptr - tmp;
-                    return 0;
-                }
-
-                open_num++;
             }
-        } else if ((__builtin_bswap32(tk) & MASK32_4) == XCLOSE) {
-            char *tmp = ptr;
-            ptr += 2; /** skip '</' */
-            uint64_t x = *(uint64_t *)(ptr);
-            TokenType tt = token_type(x);
-            if (tt.identifier == identifier) {
-                if (open_num == 0) {
+        } else {
+            if ((__builtin_bswap32(tk) & MASK32_3) == XOPEN) {
+                char *tmp = ptr;
+                ptr++; /** skip '<' */
+                uint64_t x = *(uint64_t *)(ptr);
+                TokenType tt = token_type(x);
+                if (tt.identifier == identifier) {
                     ptr += strlen_u64(tt.identifier);
                     
                     uint32_t whitespace_count = 0;
                     skip_whitespace(ptr, 0, &whitespace_count);
-
+                    
                     ptr += whitespace_count;
-                    ptr++; /** skip '<' */
-
-                    if (tag_type == TAG_CLOSING) {
+    
+                    if (tag_type == TAG_SELFCLOSING) {
+                        ptr += 2; /** skip '/>' */
                         tag->data = tmp;
                         tag->length = ptr - tmp;
-                        
                         return 0;
                     }
-                } else {
-                    open_num--;
+                    
+                    if (tag_type == TAG_OPENING) {
+                        ptr++; /** skip '>' */
+                        tag->data = tmp;
+                        tag->length = ptr - tmp;
+                        return 0;
+                    }
+    
+                    open_num++;
+                }
+            } else if ((__builtin_bswap32(tk) & MASK32_4) == XCLOSE) {
+                char *tmp = ptr;
+                ptr += 2; /** skip "</" */
+                uint64_t x = *(uint64_t *)(ptr);
+                TokenType tt = token_type(x);
+                if (tt.identifier == identifier) {
+                    if (open_num == 0) {
+                        ptr += strlen_u64(tt.identifier);
+                        
+                        uint32_t whitespace_count = 0;
+                        skip_whitespace(ptr, 0, &whitespace_count);
+    
+                        ptr += whitespace_count;
+                        ptr++; /** skip '<' */
+    
+                        if (tag_type == TAG_CLOSING) {
+                            tag->data = tmp;
+                            tag->length = ptr - tmp;
+                            
+                            return 0;
+                        }
+                    } else {
+                        open_num--;
+                    }
                 }
             }
         }
@@ -463,7 +500,7 @@ int get_next_tag(String *tag, char *ptr, uint64_t identifier, TagType tag_type) 
     return -1;
 }
 
-int get_token(NextToken *next_token, char *html, uint32_t html_length, uint32_t *cursor) {
+int get_token(NextToken *next_token, char *html, uint32_t html_length, uint32_t *cursor, AttrLL *ll) {
     uint32_t tk = *(uint32_t *)(html + (*cursor));
     
     if ((__builtin_bswap32(tk) & MASK32_2) == DOCB) {
@@ -499,6 +536,9 @@ int get_token(NextToken *next_token, char *html, uint32_t html_length, uint32_t 
 
         (*cursor) += strlen_u64(next_token->token.identifier);
 
+        AttrLLItem *prev = NULL;
+        AttrLLItem *curr = NULL;
+
         while (true) {                            
             Attr attr = {0};
             parse_next_tag_attr(&attr, html, html_length, cursor);
@@ -516,6 +556,31 @@ int get_token(NextToken *next_token, char *html, uint32_t html_length, uint32_t 
                 if (next_token->token.kind != TOKEN_XUSE) {
                     assert(0);
                     /* print error! */
+                } else {
+                    if (ll && next_token->token.identifier == ll->identifier) {
+                        curr = malloc(sizeof(AttrLLItem));
+                        bzero(curr, sizeof(AttrLLItem));
+
+                        curr->attr.name.data = malloc(attr.name.length + 1);
+                        curr->attr.name.length = attr.name.length;
+                        memcpy(curr->attr.name.data, attr.name.data, attr.name.length);
+                        curr->attr.name.data[attr.name.length] = '\0';
+                        
+                        curr->attr.value.data = malloc(attr.value.length + 1);
+                        curr->attr.value.length = attr.value.length;
+                        memcpy(curr->attr.value.data, attr.value.data, attr.value.length);
+                        curr->attr.value.data[attr.value.length] = '\0';
+                        
+                        if (!prev) {
+                            ll->head = curr;
+                            prev = curr;
+                            ll->count++;
+                        } else {
+                            prev->next = curr;
+                            prev = curr;
+                            ll->count++;
+                        }
+                    }
                 }
             }
         }
@@ -666,7 +731,7 @@ int ark_compile_templates(char **array_of_filepaths, char **file_content_array, 
             
             NextToken nt = {0};
 
-            get_token(&nt, lexer.file_content.data, lexer.file_content.length, &lexer.cursor);
+            get_token(&nt, lexer.file_content.data, lexer.file_content.length, &lexer.cursor, NULL);
 
             switch (nt.token.kind) {
                 case TOKEN_END: {
@@ -745,6 +810,7 @@ int ark_compile_templates(char **array_of_filepaths, char **file_content_array, 
                         inside_xuse = false;
                     } else if (nt.token.tag.type == TAG_CLOSING) {
                         oc.xfill -= 1;
+                        inside_xuse = true;
                     }
                     break;
                 }
@@ -834,16 +900,79 @@ int ark_compile_templates(char **array_of_filepaths, char **file_content_array, 
         lexer.line_number = 1;
 
         uint32_t xfill_count = 0;
-
         Template *importing = NULL;
         uint32_t importing_cursor = 0;
+        uint32_t saved_location = 0;
+        
+        AttrLL ll = {0};
+        ll.identifier = XUSE;
 
+        do_again:;
+        boolean repeat = false;
+        
         while (lexer.file_content.data[lexer.cursor]) {
             NextToken nt = {0};
 
-            get_token(&nt, lexer.file_content.data, lexer.file_content.length, &lexer.cursor);
+            get_token(&nt, lexer.file_content.data, lexer.file_content.length, &lexer.cursor, ll.in_use ? NULL : &ll);
+            if (nt.token.identifier) {
+                repeat = true;
+            }
 
             switch (nt.token.kind) {
+                case TOKEN_PLACEHOLDER: {
+                    String name = {0};
+
+                    char *p = lexer.file_content.data + nt.token.tag.markup.start;
+                    p += 2; /** skip "{{" */
+                    uint32_t whitespace_count = 0;
+                    skip_whitespace(p, 0, &whitespace_count);
+                    p += whitespace_count;
+
+                    name.data = p;
+                    while (!isspace(*p)) {
+                        name.length++;
+                        p++;
+                    }
+
+                    AttrLLItem* current = ll.head;
+                    while (current != NULL) {
+                        if (strncmp(current->attr.name.data, name.data, name.length) == 0) {
+                            Range placeholder = nt.token.tag.markup;
+                        
+                            char *insert_location = lexer.file_content.data + placeholder.start;
+                            
+                            size_t substring_to_remove_length = placeholder.end - placeholder.start;
+
+                            char *substring_to_insert = current->attr.value.data;
+                            size_t substring_to_insert_length = current->attr.value.length;
+
+                            {
+                                /** Expand/Shrink space where new substring will inserted so it fits perfectly */
+                                char *dest = insert_location + substring_to_insert_length;
+                                char *src = insert_location + substring_to_remove_length;
+                                size_t chunk_length = strlen(lexer.file_content.data + placeholder.end) + 1;
+                                memmove(dest, src, chunk_length);
+                            }
+
+                            memcpy(insert_location, substring_to_insert, substring_to_insert_length);
+                            ll.rendered++;
+
+                            if (ll.rendered == ll.count) {
+                                bzero(&ll, sizeof(AttrLL));
+                                ll.identifier = XUSE;
+                                ll.in_use = false;
+                            }
+
+                            break;
+                        }
+                        
+                        current = current->next;
+                    }
+
+                    printf("\n");
+
+                    break;
+                }
                 case TOKEN_XUSE: {
                     if (xfill_count) {
                         break;
@@ -851,8 +980,10 @@ int ark_compile_templates(char **array_of_filepaths, char **file_content_array, 
 
                     find_component(&importing, nt.name);
                     
-                    if (nt.token.tag.type == TAG_SELFCLOSING) {                        
+                    if (nt.token.tag.type == TAG_SELFCLOSING) {                                                
                         Range tag_markup = nt.token.tag.markup;
+                        
+                        saved_location = tag_markup.start;
 
                         char *insert_location = lexer.file_content.data + tag_markup.start;
                         
@@ -875,30 +1006,18 @@ int ark_compile_templates(char **array_of_filepaths, char **file_content_array, 
                     }
 
                     if (nt.token.tag.type == TAG_OPENING) {
+                        ll.in_use = true;
+
                         Range opening_tag_markup = nt.token.tag.markup;
-                        
-                        char *insert_location = lexer.file_content.data + opening_tag_markup.start;
-                        
-                        size_t substring_to_remove_length = opening_tag_markup.end - opening_tag_markup.start;
 
-                        char *substring_to_insert = importing->component.data;
-                        String xslot_selfclosing_tag = {0};
-                        get_next_tag(&xslot_selfclosing_tag, importing->component.data, XSLOT, TAG_SELFCLOSING);
-                        size_t substring_to_insert_length = xslot_selfclosing_tag.data - substring_to_insert;
+                        saved_location = opening_tag_markup.start;
+                            
+                        char *dest = lexer.file_content.data + opening_tag_markup.start;
+                        char *src = lexer.file_content.data + opening_tag_markup.end;
+                        size_t chunk_length = strlen(src) + 1;
+                        memmove(dest, src, chunk_length);
 
-                        importing_cursor = (xslot_selfclosing_tag.data + xslot_selfclosing_tag.length) - importing->component.data;
-
-                        {
-                            /** Expand/Shrink space where new substring will inserted so it fits perfectly */
-                            char *dest = insert_location + substring_to_insert_length;
-                            char *src = insert_location + substring_to_remove_length;
-                            size_t chunk_length = strlen(lexer.file_content.data + opening_tag_markup.end) + 1;
-                            memmove(dest, src, chunk_length);
-                        }
-
-                        memcpy(insert_location, substring_to_insert, substring_to_insert_length);
-
-                        lexer.cursor = (insert_location + substring_to_insert_length) - lexer.file_content.data;
+                        lexer.cursor = opening_tag_markup.start;
                     }
 
                     if (nt.token.tag.type == TAG_CLOSING) {
@@ -920,6 +1039,12 @@ int ark_compile_templates(char **array_of_filepaths, char **file_content_array, 
                         }
 
                         memcpy(insert_location, substring_to_insert, substring_to_insert_length);
+                        
+                        lexer.cursor = saved_location;
+                        
+                        importing = NULL;
+                        importing_cursor = 0;
+                        saved_location = 0;
                     }
                     break;
                 }
@@ -927,11 +1052,31 @@ int ark_compile_templates(char **array_of_filepaths, char **file_content_array, 
                     if (nt.token.tag.type == TAG_OPENING) {
                         if (xfill_count == 0) {
                             Range opening_tag_markup = nt.token.tag.markup;
+                        
+                            char *insert_location = lexer.file_content.data + opening_tag_markup.start;
+                            
+                            size_t substring_to_remove_length = opening_tag_markup.end - opening_tag_markup.start;
 
-                            char *dest = lexer.file_content.data + opening_tag_markup.start;
-                            char *src = lexer.file_content.data + opening_tag_markup.end;
-                            size_t chunk_length = strlen(src) + 1;
-                            memmove(dest, src, chunk_length);
+                            char *substring_to_insert = (importing->component.data + importing_cursor);
+                            String xslot_selfclosing_tag = {0};
+                            get_next_tag(&xslot_selfclosing_tag, (importing->component.data + importing_cursor), XSLOT, TAG_SELFCLOSING);
+                            size_t substring_to_insert_length = xslot_selfclosing_tag.data - substring_to_insert;
+
+                            importing_cursor += substring_to_insert_length + xslot_selfclosing_tag.length;
+
+                            {
+                                /* Expand/Shrink space where new substring will inserted so it fits perfectly */
+                                char *dest = insert_location + substring_to_insert_length;
+                                char *src = insert_location + substring_to_remove_length;
+                                size_t chunk_length = strlen(lexer.file_content.data + opening_tag_markup.end) + 1;
+                                memmove(dest, src, chunk_length);
+                            }
+
+                            memcpy(insert_location, substring_to_insert, substring_to_insert_length);
+
+
+                            saved_location = (insert_location + substring_to_insert_length) - lexer.file_content.data;
+                            lexer.cursor = saved_location;
                         }
 
                         xfill_count++;
@@ -958,6 +1103,13 @@ int ark_compile_templates(char **array_of_filepaths, char **file_content_array, 
             }
 
             lexer.cursor++;
+        }
+
+        if (repeat) {
+            lexer.cursor = 0;
+            xfill_count = 0;
+            
+            goto do_again;
         }
         
         UNLOCK_MEMORY(memory, &ct[cursor]);

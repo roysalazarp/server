@@ -1,32 +1,39 @@
 <x-def name="foo">
-    <section class="foo">
-        <div>
+    <hhr class="foo">
+        <ak>
             <x-use name="boo"/>
-        </div>
-        <x-use name="layout">
+        </ak>
+        <x-use name="layout" age="33">
             <x-fill>
                 <h1>Foo</h1>
-                <div>
-                    <x-use name="bar" firstname="John">
+                <ng>
+                    <x-use name="bar" firstname="John" lastname="smith">
                         <x-fill> 
                             Doe
                         </x-fill>
                     </x-use>
-                </div>
+                </ng>
+            </x-fill>
+            <x-fill>
+                <gh>skdklas</gh>
             </x-fill>
         </x-use>
-    </section>
+    </hhr>
 </x-def>
 
 <x-def name="layout">
-    <span class="layout">
+    <xo class="layout">
         <x-slot />
-    </span>
+        <po>
+            <x-slot />
+            <div>{{ age }}</div>
+        </po>
+    </xo>
 </x-def>
 
 <x-def name="bar">
     <body class="bar">
-        <h2>firstname</h2>
+        <h2>{{ firstname }}</h2>
         <div>
             <x-use name="baz">
                 <x-fill>
@@ -36,6 +43,9 @@
             </x-use>
         </div>
     </body>
+    <div>
+        {{ lastname }}
+    </div>
 </x-def>
 
 <x-def name="baz">
@@ -53,41 +63,3 @@
         </div>
     </section>
 </x-def>
-
-<section class="foo">
-    <span class="layout">
-        <h1>Foo</h1>
-        <div>
-            <body class="bar">
-                <h2>{{ firstname }}</h2>
-                <div>
-                    <section class="baz">
-                        <div>
-                            <div>hahah</div>
-                            Doe
-                        </div>
-                    </section>
-                </div>
-            </body>
-        </div>
-    </span>
-</section>
-
-<section class="foo">
-    <span class="layout">
-        <h1>Foo</h1>
-        <div>
-            <body class="bar">
-                <h2></h2>
-                <div>
-                    <section class="baz">
-                        <div>
-                            <div>hahah</div>
-                            Doe
-                        </div>
-                    </section>
-                </div>
-            </body>
-        </div>
-    [</span>]
-</section>
