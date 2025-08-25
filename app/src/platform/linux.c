@@ -56,7 +56,8 @@ int main() {
         array_of_file_contents[i] = file_content;
     }
 
-    ark_compile_templates(array_of_filepaths, array_of_file_contents, num_of_filepaths);
+    ArkComponentArray component_array = {0};
+    ark_compile_templates(&component_array, array_of_filepaths, array_of_file_contents, num_of_filepaths);
     
     int code;
     while (1) {
