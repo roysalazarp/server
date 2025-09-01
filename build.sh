@@ -5,7 +5,7 @@ set -e
 
 # Compiler and flags
 CC=gcc
-CFLAGS="-std=c89 -g -DDEBUG=1 -Wall -Wextra -Werror -pedantic -Wno-unused-parameter -Wno-unused-but-set-variable -Wno-declaration-after-statement -Wno-unused-variable -Wno-long-long -Wno-missing-field-initializers -Wno-implicit-function-declaration"
+CFLAGS="-g -DDEBUG=1 -Wall -Wextra -Werror -pedantic -Wno-unused-parameter -Wno-unused-but-set-variable -Wno-declaration-after-statement -Wno-unused-variable -Wno-long-long -Wno-missing-field-initializers -Wno-implicit-function-declaration -Wno-unused-function -Wno-uninitialized"
 
 # Create output directories if they don't exist
 mkdir -p ArkSDK/include/ark
@@ -34,6 +34,19 @@ $CC $CFLAGS -fPIC -shared src/profiler/profiler.c -o ArkSDK/lib/libark_profiler.
 # Utils module
 $CC $CFLAGS -fPIC -shared src/utils/utils.c -o ArkSDK/lib/libark_utils.so
 
+# Task module
+$CC $CFLAGS -fPIC -shared \
+    src/task/asm.S \
+    src/task/channel.c \
+    src/task/context.c \
+    src/task/fd.c \
+    src/task/net.c \
+    src/task/print.c \
+    src/task/qlock.c \
+    src/task/rendez.c \
+    src/task/task.c \
+    -o ArkSDK/lib/libark_task.so
+
 echo "📦 Packaging SDK..."
 
 # Copy public headers to SDK include folder
@@ -50,11 +63,11 @@ $CC $CFLAGS -I./ArkSDK/include test/test_http.c \
     -L./ArkSDK/lib -lark_http -o test/test_http
 
 $CC $CFLAGS -I./ArkSDK/include test/test_server.c \
-    -L./ArkSDK/lib -lark_server -lark_memory -lark_utils -o test/test_server
+    -L./ArkSDK/lib -lark_server -lark_memory -lark_utils -lark_task -o test/test_server
 
 SRC_FILES=$(find ./app/src -name "*.c")
 $CC $CFLAGS $SRC_FILES -I./ArkSDK/include \
-    -L./ArkSDK/lib -lark_server -lark_memory -lark_http -lark_utils -lark_template -o ./app/bin
+    -L./ArkSDK/lib -lark_server -lark_memory -lark_http -lark_utils -lark_template -lark_task -o ./app/bin
 
 echo "🚀 Running test..."
 LD_LIBRARY_PATH=$(pwd)/ArkSDK/lib ./test/test_json

@@ -47,7 +47,10 @@
         "inet.h": "c",
         "stdint.h": "c",
         "stdint-gcc.h": "c",
-        "limits": "c"
+        "limits": "c",
+        "task.h": "c",
+        "taskimpl.h": "c",
+        "inttypes.h": "c"
     },
     "C_Cpp.errorSquiggles": "enabled"
 }
