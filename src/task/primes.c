@@ -22,7 +22,7 @@ primetask(void *arg)
 	if(!quiet)
 		printf("%d\n", p);
 	nc = chancreate(sizeof(unsigned long), buffer);
-	taskcreate(primetask, nc, 32768);
+	ark_task_create(primetask, nc, 32768);
 	for(;;){
 		i = chanrecvul(c);
 		if(i%p)
@@ -43,7 +43,7 @@ taskmain(int argc, char **argv)
 	printf("goal=%d\n", goal);
 
 	c = chancreate(sizeof(unsigned long), buffer);
-	taskcreate(primetask, c, 32768);
+	ark_task_create(primetask, c, 32768);
 	for(i=2;; i++)
 		chansendul(c, i);
 }

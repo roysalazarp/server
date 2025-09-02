@@ -134,7 +134,7 @@ taskalloc(void (*fn)(void*), void *arg, uint stack)
 }
 
 int
-taskcreate(void (*fn)(void*), void *arg, uint stack)
+ark_task_create(void (*fn)(void*), void *arg, uint stack)
 {
 	int id;
 	Task *t;
@@ -222,7 +222,7 @@ contextswitch(Context *from, Context *to)
 }
 
 void
-taskscheduler(void)
+ark_task_run_scheduler(void)
 {
 	int i;
 	Task *t;
@@ -354,9 +354,9 @@ int ark_task_init(void (*fn)(void*), void *arg, int stack_size) {
 
     mainstacksize = stack_size;
 
-	taskcreate(fn, arg, mainstacksize);
-	taskscheduler();
-	fprint(2, "taskscheduler returned in main!\n");
+	ark_task_create(fn, arg, mainstacksize);
+	ark_task_run_scheduler();
+	fprint(2, "ark_task_run_scheduler returned in main!\n");
 	abort();
 
 	return 0;

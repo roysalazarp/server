@@ -59,7 +59,7 @@ netaccept(int fd, char *server, int *port)
 	uchar *ip;
 	socklen_t len;
 	
-	fdwait(fd, 'r');
+	ark_fd_await(fd, 'r');
 
 	taskstate("netaccept");
 	len = sizeof sa;
@@ -183,7 +183,7 @@ netdial(int istcp, char *server, int port)
 	}
 
 	/* wait for finish */	
-	fdwait(fd, 'w');
+	ark_fd_await(fd, 'w');
 	sn = sizeof sa;
 	if(getpeername(fd, (struct sockaddr*)&sa, &sn) >= 0){
 		taskstate("connect succeeded");

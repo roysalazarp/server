@@ -28,7 +28,7 @@ taskmain(int argc, char **argv)
 	for(i=1; i<argc; i++){
 		n++;
 		printf("x");
-		taskcreate(delaytask, (void*)atoi(argv[i]), STACK);
+		ark_task_create(delaytask, (void*)atoi(argv[i]), STACK);
 	}
 
 	/* wait for n tasks to finish */

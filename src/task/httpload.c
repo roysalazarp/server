@@ -29,7 +29,7 @@ taskmain(int argc, char **argv)
 	url = argv[3];
 
 	for(i=0; i<n; i++){
-		taskcreate(fetchtask, 0, STACK);
+		ark_task_create(fetchtask, 0, STACK);
 		while(taskyield() > 1)
 			;
 		sleep(1);
@@ -49,8 +49,8 @@ fetchtask(void *v)
 			continue;
 		}
 		snprintf(buf, sizeof buf, "GET %s HTTP/1.0\r\nHost: %s\r\n\r\n", url, server);
-		fdwrite(fd, buf, strlen(buf));
-		while((n = fdread(fd, buf, sizeof buf)) > 0)
+		ark_fd_write(fd, buf, strlen(buf));
+		while((n = ark_fd_read(fd, buf, sizeof buf)) > 0)
 			;
 		close(fd);
 		write(1, ".", 1);

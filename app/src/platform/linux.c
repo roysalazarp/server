@@ -21,30 +21,13 @@
 
 #define PAGE_SIZE KB(4)
 
-int fd;
-
-int ark_retrive_request(ArkRequest *request) {
-    fdwait(fd, 'r');
-    
-    ark_client_accept(&request->fd, fd);
-    fdwait(request->fd, 'r');
-
-    char *buf = malloc(1000);
-    fdread(request->fd, buf, 1000);
-
-    request->raw = buf;
-    request->length = strlen(buf) + 1;
-
-    return 0;
-}
-
 typedef struct {
     char server[20];
     char uri[20];
     int fd;
 } ServerUri;
 
-void fetchtask(void *v) {
+void request_external_server(void *v) {
 	int filedescriptor, n;
 	char buf[512];
 
@@ -55,50 +38,61 @@ void fetchtask(void *v) {
         assert(0);
     }
     snprintf(buf, sizeof buf, "GET %s HTTP/1.0\r\nHost: %s\r\n\r\n", server_uri->uri, server_uri->server);
-    fdwrite(filedescriptor, buf, strlen(buf));
-    while((n = fdread(filedescriptor, buf, sizeof buf)) > 0)
+    ark_fd_write(filedescriptor, buf, strlen(buf));
+    while((n = ark_fd_read(filedescriptor, buf, sizeof buf)) > 0)
         ;
     close(filedescriptor);
 
     char resbuf[1000];
     snprintf(resbuf, sizeof resbuf, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 11\r\n\r\nHello World");
     int len = strlen(resbuf);
-    fdwrite(server_uri->fd, resbuf, len);
+    ark_fd_write(server_uri->fd, resbuf, len);
 }
 
 void handler(void *arg) {
-    int code;
+    int fd = *(int *)arg;
+
     for (;;) {
         ArkRequest new_request = {0};
-        code = ark_retrive_request(&new_request);
+        ark_fd_await(fd, 'r');
+    
+        int client_fd;
+        ark_client_accept(&client_fd, fd);
+        ark_fd_await(client_fd, 'r');
+
+        char *request = malloc(1000);
+        ark_fd_read(client_fd, request, 1000);
+        size_t request_length = strlen(request) + 1;
 
         ARKHttpMessage http_msg = {0};
-        ark_parse_http_request_message(&http_msg, new_request.raw, new_request.length);
-        
-        // printf("%.*s\n", http_msg.uri.end_offset - http_msg.uri.start_offset, new_request.raw + http_msg.uri.start_offset);
+        ark_parse_http_request_message(&http_msg, request, request_length);
 
-        char *uri = new_request.raw + http_msg.uri.start_offset;
+        char *uri = request + http_msg.uri.start_offset;
         size_t uri_length = http_msg.uri.end_offset - http_msg.uri.start_offset;
         
         if (strncmp(uri, "/a", uri_length) == 0 && uri_length == strlen("/a")) {
             ServerUri *server_uri = malloc(sizeof(ServerUri));
-            memset(server_uri, 0, sizeof(ServerUri));
+            bzero(server_uri, sizeof(ServerUri));
             memcpy(server_uri->server, "localhost", strlen("localhost"));
             memcpy(server_uri->uri, "/a", strlen("/a"));
-            server_uri->fd = new_request.fd;
+            server_uri->fd = client_fd;
 
-            taskcreate(fetchtask, server_uri, 32768);
+            int stack_size = KB(8);
+            ark_task_create(request_external_server, server_uri, stack_size);
         }
         
         if (strncmp(uri, "/b", uri_length) == 0 && uri_length == strlen("/b")) {
             ServerUri *server_uri = malloc(sizeof(ServerUri));
-            memset(server_uri, 0, sizeof(ServerUri));
+            bzero(server_uri, sizeof(ServerUri));
             memcpy(server_uri->server, "localhost", strlen("localhost"));
             memcpy(server_uri->uri, "/b", strlen("/b"));
-            server_uri->fd = new_request.fd;
+            server_uri->fd = client_fd;
             
-            taskcreate(fetchtask, server_uri, 32768);
+            int stack_size = KB(8);
+            ark_task_create(request_external_server, server_uri, stack_size);
         }
+
+        // send 404
     }
 }
 
@@ -142,10 +136,12 @@ int main() {
     ArkComponentArray component_array = {0};
     ark_compile_templates(&component_array, array_of_filepaths, array_of_file_contents, num_of_filepaths);
     
+    int fd;
     ark_setup_server(&fd, (uint16_t)8080);
 
-    taskcreate(handler, NULL, 256*1024);
-	taskscheduler();
+    int stack_size = KB(8); /** NOTE: Keep an eye that the stack size does not become a problem */
+    ark_task_create(handler, &fd, stack_size); 
+	ark_task_run_scheduler();
     
     return 0;
 }

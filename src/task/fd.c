@@ -1,7 +1,6 @@
 #include "taskimpl.h"
 #include <fcntl.h>
 
-
 static Tasklist sleeping;
 static int sleepingcounted;
 static uvlong nsec(void);
@@ -75,13 +74,13 @@ fdtask(void *v)
 }
 
 void
-fdwait(int fd, int rw)
+ark_fd_await(int fd, int rw)
 {
 	int bits;
 
 	if(!startedfdtask){
 		startedfdtask = 1;
-		taskcreate(fdtask, 0, 32768);
+		ark_task_create(fdtask, 0, 32768);
 	}
 
 	if(npollfd >= MAXFD){
@@ -89,7 +88,7 @@ fdwait(int fd, int rw)
 		abort();
 	}
 	
-	taskstate("fdwait for %s", rw=='r' ? "read" : rw=='w' ? "write" : "error");
+	taskstate("ark_fd_await for %s", rw=='r' ? "read" : rw=='w' ? "write" : "error");
 	bits = 0;
 	switch(rw){
 	case 'r':
@@ -169,16 +168,16 @@ fdtask(void *v)
 
 
 void
-fdwait(int fd, int rw)
+ark_fd_await(int fd, int rw)
 {
 	if(!startedfdtask){
 		startedfdtask = 1;
         epfd = epoll_create1(0);
         assert(epfd != -1);
-		taskcreate(fdtask, 0, 32768);
+		ark_task_create(fdtask, 0, 32768);
 	}
 
-	taskstate("fdwait for %s", rw=='r' ? "read" : rw=='w' ? "write" : "error");
+	taskstate("ark_fd_await for %s", rw=='r' ? "read" : rw=='w' ? "write" : "error");
     struct epoll_event ev = {0};
     ev.data.ptr = taskrunning;
 	switch(rw){
@@ -219,7 +218,7 @@ taskdelay(uint ms)
         epfd = epoll_create(1);
         assert(epfd >= 0);
 #endif
-		taskcreate(fdtask, 0, 32768);
+		ark_task_create(fdtask, 0, 32768);
 	}
 
 	now = nsec();
@@ -254,25 +253,25 @@ taskdelay(uint ms)
 }
 
 int
-fdread(int fd, void *buf, int n)
+ark_fd_read(int fd, void *buf, int n)
 {
 	int m;
 	
 	while((m=read(fd, buf, n)) < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
-		fdwait(fd, 'r');
+		ark_fd_await(fd, 'r');
     }
 
 	return m;
 }
 
 int
-fdwrite(int fd, void *buf, int n)
+ark_fd_write(int fd, void *buf, int n)
 {
 	int m, tot;
 	
 	for(tot=0; tot<n; tot+=m){
 		while((m=write(fd, (char*)buf+tot, n-tot)) < 0 && errno == EAGAIN)
-			fdwait(fd, 'w');
+			ark_fd_await(fd, 'w');
 		if(m < 0)
 			return m;
 		if(m == 0)

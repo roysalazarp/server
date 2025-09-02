@@ -18,7 +18,7 @@ typedef struct Task Task;
 typedef struct Tasklist Tasklist;
 
 int		anyready(void);
-int		taskcreate(void (*f)(void *arg), void *arg, unsigned int stacksize);
+int		ark_task_create(void (*f)(void *arg), void *arg, unsigned int stacksize);
 void		taskexit(int);
 void		taskexitall(int);
 int        ark_task_init(void (*fn)(void*), void *arg, int stack_size);
@@ -32,7 +32,7 @@ char*		taskgetstate(void);
 void		tasksystem(void);
 unsigned int	taskdelay(unsigned int);
 unsigned int	taskid(void);
-void     taskscheduler(void);
+void     ark_task_run_scheduler(void);
 
 struct Tasklist	/* used internally */
 {
@@ -153,9 +153,9 @@ int		chansendul(Channel *c, unsigned long v);
 /*
  * Threaded I/O.
  */
-int		fdread(int, void*, int);
-int		fdwrite(int, void*, int);
-void		fdwait(int, int);
+int		ark_fd_read(int, void*, int);
+int		ark_fd_write(int, void*, int);
+void		ark_fd_await(int, int);
 int		fdnoblock(int);
 
 void		fdtask(void*);

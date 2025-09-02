@@ -52,7 +52,7 @@ taskmain(int argc, char **argv)
 	fdnoblock(fd);
 	while((cfd = netaccept(fd, remote, &rport)) >= 0){
 		fprintf(stderr, "connection from %s:%d\n", remote, rport);
-		taskcreate(proxytask, (void*)cfd, STACK);
+		ark_task_create(proxytask, (void*)cfd, STACK);
 	}
 }
 
@@ -69,8 +69,8 @@ proxytask(void *v)
 	
 	fprintf(stderr, "connected to %s:%d\n", server, port);
 
-	taskcreate(rwtask, mkfd2(fd, remotefd), STACK);
-	taskcreate(rwtask, mkfd2(remotefd, fd), STACK);
+	ark_task_create(rwtask, mkfd2(fd, remotefd), STACK);
+	ark_task_create(rwtask, mkfd2(remotefd, fd), STACK);
 }
 
 void
@@ -84,8 +84,8 @@ rwtask(void *v)
 	wfd = a[1];
 	free(a);
 	
-	while((n = fdread(rfd, buf, sizeof buf)) > 0)
-		fdwrite(wfd, buf, n);
+	while((n = ark_fd_read(rfd, buf, sizeof buf)) > 0)
+		ark_fd_write(wfd, buf, n);
 	shutdown(wfd, SHUT_WR);
 	close(rfd);
 }

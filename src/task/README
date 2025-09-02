@@ -22,7 +22,7 @@ functions should #include <task.h>.
 
 --- Basic task manipulation
 
-int taskcreate(void (*f)(void *arg), void *arg, unsigned int stacksize);
+int ark_task_create(void (*f)(void *arg), void *arg, unsigned int stacksize);
 
 	Create a new task running f(arg) on a stack of size stacksize.
 
@@ -101,19 +101,19 @@ int fdnoblock(int fd);
 	Sets I/O on the given fd to be non-blocking.  Should be
 	called before any of the other fd routines.
 
-int fdread(int, void*, int);
+int ark_fd_read(int, void*, int);
 
 	Like regular read(), but puts task to sleep while waiting for
 	data instead of blocking the whole program.
 
-int fdwrite(int, void*, int);
+int ark_fd_write(int, void*, int);
 
 	Like regular write(), but puts task to sleep while waiting to
 	write data instead of blocking the whole program.
 
-void fdwait(int fd, int rw);
+void ark_fd_await(int fd, int rw);
 
-	Low-level call sitting underneath fdread and fdwrite.
+	Low-level call sitting underneath ark_fd_read and ark_fd_write.
 	Puts task to sleep while waiting for I/O to be possible on fd.
 	Rw specifies type of I/O: 'r' means read, 'w' means write,
 	anything else means just exceptional conditions (hang up, etc.)
