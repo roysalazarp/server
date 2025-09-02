@@ -15,7 +15,7 @@ int main() {
     int code;
     while (1) {
         ArkRequest new_request;
-        code = ark_retrive_request(&new_request);
+        code = ark_retrive_request_old(&new_request);
         if (code == ARK_SHUT_SERVER_SIGNAL) { break; }
 
         char response[] = "HTTP/1.1 200 OK\r\n"

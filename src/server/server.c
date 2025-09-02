@@ -330,7 +330,7 @@ int ark_fetch(ArkFetchResponse *response, uint32_t handle, ArkFetchTaskDetails *
     return 0;
 }
 
-int ark_retrive_request(ArkRequest *ark_request) {    
+int ark_retrive_request_old(ArkRequest *ark_request) {    
     int _;
     begining:;
 
