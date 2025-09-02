@@ -50,7 +50,9 @@
         "limits": "c",
         "task.h": "c",
         "taskimpl.h": "c",
-        "inttypes.h": "c"
+        "inttypes.h": "c",
+        "fcntl.h": "c",
+        "stdlib.h": "c"
     },
     "C_Cpp.errorSquiggles": "enabled"
 }

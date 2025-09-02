@@ -253,19 +253,6 @@ taskdelay(uint ms)
 	return (nsec() - now)/1000000;
 }
 
-
-/* Like fdread but always calls fdwait before reading. */
-int
-fdread1(int fd, void *buf, int n)
-{
-	int m;
-	
-	do
-		fdwait(fd, 'r');
-	while((m = read(fd, buf, n)) < 0 && (errno == EAGAIN || errno == EWOULDBLOCK));
-	return m;
-}
-
 int
 fdread(int fd, void *buf, int n)
 {
@@ -274,8 +261,6 @@ fdread(int fd, void *buf, int n)
 	while((m=read(fd, buf, n)) < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
 		fdwait(fd, 'r');
     }
-
-    perror(NULL);
 
 	return m;
 }

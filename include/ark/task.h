@@ -32,6 +32,7 @@ char*		taskgetstate(void);
 void		tasksystem(void);
 unsigned int	taskdelay(unsigned int);
 unsigned int	taskid(void);
+void     taskscheduler(void);
 
 struct Tasklist	/* used internally */
 {
@@ -153,7 +154,6 @@ int		chansendul(Channel *c, unsigned long v);
  * Threaded I/O.
  */
 int		fdread(int, void*, int);
-int		fdread1(int, void*, int);	/* always uses fdwait */
 int		fdwrite(int, void*, int);
 void		fdwait(int, int);
 int		fdnoblock(int);

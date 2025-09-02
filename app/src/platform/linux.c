@@ -21,7 +21,7 @@
 
 #define PAGE_SIZE KB(4)
 
-void server_handler(void *arg) {
+void handler(void *arg) {
     int fd = *(int *)arg;
 
     for (;;) {
@@ -37,13 +37,14 @@ void server_handler(void *arg) {
 
         char buf[1000];
 
-        fdread1(client_fd, buf, 1000);
+        fdread(client_fd, buf, 1000);
         printf("%s\n", buf);
 
         char resbuf[1000];
 
         snprintf(resbuf, sizeof resbuf, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 11\r\n\r\nHello World");
-        fdwrite(client_fd, resbuf, strlen(resbuf));
+        int len = strlen(resbuf);
+        fdwrite(client_fd, resbuf, len);
 
         printf("%s\n", resbuf);
     }
@@ -91,8 +92,11 @@ int main() {
     
     int fd;
     ark_setup_server(&fd, (uint16_t)8080);
-    ark_task_init(server_handler, &fd, 256*1024);
 
+    taskcreate(handler, &fd, 256*1024);
+	taskscheduler();
+    
+    // ark_task_init(handler, &fd, 256*1024);
     // ark_server_init((uint16_t)8080);
 
     // int code;

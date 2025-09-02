@@ -28,7 +28,7 @@ taskdebug(char *fmt, ...)
 	char *p;
 	static int fd = -1;
 
-return;
+// return;
 	va_start(arg, fmt);
 	vfprint(1, fmt, arg);
 	va_end(arg);
@@ -221,13 +221,13 @@ contextswitch(Context *from, Context *to)
     printf("switch!!!\n");
 }
 
-static void
+void
 taskscheduler(void)
 {
 	int i;
 	Task *t;
 
-	taskdebug("scheduler enter");
+	taskdebug("scheduler enter\n");
 	for(;;){
 		if(taskcount == 0)
 			exit(taskexitval);
@@ -240,7 +240,7 @@ taskscheduler(void)
 		t->ready = 0;
 		taskrunning = t;
 		tasknswitch++;
-		taskdebug("run %d (%s)", t->id, t->name);
+		taskdebug("run %d (%s)\n", t->id, t->name);
 		contextswitch(&taskschedcontext, &t->context);
 //print("back in scheduler\n");
 		taskrunning = nil;
