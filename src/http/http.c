@@ -47,6 +47,8 @@ int get_http_header(const char *str, size_t len) {
  *  NOTE, All http request messages (start line + headers) end with "\r\n\r\n" and after that is the start of the body
  */
 int ark_parse_http_request_message(ARKHttpMessage *http_msg, char *raw_http_msg, size_t raw_http_msg_length) {
+    if (!raw_http_msg_length) return 0;
+
     size_t i = 0;
     int http_header = 0;
     int c = 0; /** ASCII character */

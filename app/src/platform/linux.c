@@ -22,6 +22,7 @@
 #define PAGE_SIZE KB(4)
 
 typedef struct {
+    Memory *memory;
     char server[20];
     char uri[20];
     int fd;
@@ -47,22 +48,25 @@ void request_external_server(void *v) {
     snprintf(resbuf, sizeof resbuf, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 11\r\n\r\nHello World");
     int len = strlen(resbuf);
     ark_fd_write(server_uri->fd, resbuf, len);
+
+    memory_free(server_uri->memory);
 }
 
 void handler(void *arg) {
     int fd = *(int *)arg;
 
     for (;;) {
-        ArkRequest new_request = {0};
+        Memory *memory = reserve_memory(PAGE_SIZE * 15);
+
         ark_fd_await(fd, 'r');
     
         int client_fd;
         ark_client_accept(&client_fd, fd);
         ark_fd_await(client_fd, 'r');
 
-        char *request = malloc(1000);
+        char *request = memory_alloc(memory, sizeof(char) * 1000);
         ark_fd_read(client_fd, request, 1000);
-        size_t request_length = strlen(request) + 1;
+        size_t request_length = strlen(request);
 
         ARKHttpMessage http_msg = {0};
         ark_parse_http_request_message(&http_msg, request, request_length);
@@ -71,28 +75,26 @@ void handler(void *arg) {
         size_t uri_length = http_msg.uri.end_offset - http_msg.uri.start_offset;
         
         if (strncmp(uri, "/a", uri_length) == 0 && uri_length == strlen("/a")) {
-            ServerUri *server_uri = malloc(sizeof(ServerUri));
-            bzero(server_uri, sizeof(ServerUri));
+            ServerUri *server_uri = memory_alloc(memory, sizeof(ServerUri));
             memcpy(server_uri->server, "localhost", strlen("localhost"));
             memcpy(server_uri->uri, "/a", strlen("/a"));
             server_uri->fd = client_fd;
+            server_uri->memory = memory;
 
             int stack_size = KB(8);
             ark_task_create(request_external_server, server_uri, stack_size);
-        }
-        
-        if (strncmp(uri, "/b", uri_length) == 0 && uri_length == strlen("/b")) {
-            ServerUri *server_uri = malloc(sizeof(ServerUri));
-            bzero(server_uri, sizeof(ServerUri));
+        } else if (strncmp(uri, "/b", uri_length) == 0 && uri_length == strlen("/b")) {
+            ServerUri *server_uri = memory_alloc(memory, sizeof(ServerUri));
             memcpy(server_uri->server, "localhost", strlen("localhost"));
             memcpy(server_uri->uri, "/b", strlen("/b"));
             server_uri->fd = client_fd;
+            server_uri->memory = memory;
             
             int stack_size = KB(8);
             ark_task_create(request_external_server, server_uri, stack_size);
+        } else {
+            // send 404
         }
-
-        // send 404
     }
 }
 
