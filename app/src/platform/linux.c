@@ -22,17 +22,26 @@
 #define PAGE_SIZE KB(4)
 
 typedef struct {
-    Memory *memory;
     char server[20];
     char uri[20];
-    int fd;
 } ServerUri;
 
-void request_external_server(void *v) {
-	int filedescriptor, n;
-	char buf[512];
+typedef struct {
+    Memory *memory;
+    int fd;
+} MFD;
 
-    ServerUri *server_uri = v;
+void get_a(void *v) {
+    MFD *mfd = (MFD *)v;
+    Memory *memory = mfd->memory;
+    int client_fd = mfd->fd;
+
+	ServerUri *server_uri = memory_alloc(memory, sizeof(ServerUri));
+    memcpy(server_uri->server, "localhost", strlen("localhost"));
+    memcpy(server_uri->uri, "/a", strlen("/a"));
+
+    int filedescriptor, n;
+	char buf[512];
 	
     if((filedescriptor = netdial(TCP, server_uri->server, 3000)) < 0){
         fprintf(stderr, "dial %s: %s (%s)\n", server_uri->server, strerror(errno), taskgetstate());
@@ -47,9 +56,39 @@ void request_external_server(void *v) {
     char resbuf[1000];
     snprintf(resbuf, sizeof resbuf, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 11\r\n\r\nHello World");
     int len = strlen(resbuf);
-    ark_fd_write(server_uri->fd, resbuf, len);
+    ark_fd_write(client_fd, resbuf, len);
 
-    memory_free(server_uri->memory);
+    memory_free(memory);
+}
+
+void get_b(void *v) {
+    MFD *mfd = (MFD *)v;
+    Memory *memory = mfd->memory;
+    int client_fd = mfd->fd;
+
+	ServerUri *server_uri = memory_alloc(memory, sizeof(ServerUri));
+    memcpy(server_uri->server, "localhost", strlen("localhost"));
+    memcpy(server_uri->uri, "/b", strlen("/b"));
+
+    int filedescriptor, n;
+	char buf[512];
+	
+    if((filedescriptor = netdial(TCP, server_uri->server, 3000)) < 0){
+        fprintf(stderr, "dial %s: %s (%s)\n", server_uri->server, strerror(errno), taskgetstate());
+        assert(0);
+    }
+    snprintf(buf, sizeof buf, "GET %s HTTP/1.0\r\nHost: %s\r\n\r\n", server_uri->uri, server_uri->server);
+    ark_fd_write(filedescriptor, buf, strlen(buf));
+    while((n = ark_fd_read(filedescriptor, buf, sizeof buf)) > 0)
+        ;
+    close(filedescriptor);
+
+    char resbuf[1000];
+    snprintf(resbuf, sizeof resbuf, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 11\r\n\r\nHello World");
+    int len = strlen(resbuf);
+    ark_fd_write(client_fd, resbuf, len);
+
+    memory_free(memory);
 }
 
 void handler(void *arg) {
@@ -57,12 +96,15 @@ void handler(void *arg) {
 
     for (;;) {
         Memory *memory = reserve_memory(PAGE_SIZE * 15);
-
         ark_fd_await(fd, 'r');
     
         int client_fd;
         ark_client_accept(&client_fd, fd);
         ark_fd_await(client_fd, 'r');
+
+        MFD *mfd = memory_alloc(memory, sizeof(MFD));
+        mfd->memory = memory;
+        mfd->fd = client_fd;
 
         char *request = memory_alloc(memory, sizeof(char) * 1000);
         ark_fd_read(client_fd, request, 1000);
@@ -75,23 +117,11 @@ void handler(void *arg) {
         size_t uri_length = http_msg.uri.end_offset - http_msg.uri.start_offset;
         
         if (strncmp(uri, "/a", uri_length) == 0 && uri_length == strlen("/a")) {
-            ServerUri *server_uri = memory_alloc(memory, sizeof(ServerUri));
-            memcpy(server_uri->server, "localhost", strlen("localhost"));
-            memcpy(server_uri->uri, "/a", strlen("/a"));
-            server_uri->fd = client_fd;
-            server_uri->memory = memory;
-
             int stack_size = KB(8);
-            ark_task_create(request_external_server, server_uri, stack_size);
+            ark_task_create(get_a, mfd, stack_size);
         } else if (strncmp(uri, "/b", uri_length) == 0 && uri_length == strlen("/b")) {
-            ServerUri *server_uri = memory_alloc(memory, sizeof(ServerUri));
-            memcpy(server_uri->server, "localhost", strlen("localhost"));
-            memcpy(server_uri->uri, "/b", strlen("/b"));
-            server_uri->fd = client_fd;
-            server_uri->memory = memory;
-            
             int stack_size = KB(8);
-            ark_task_create(request_external_server, server_uri, stack_size);
+            ark_task_create(get_b, mfd, stack_size);
         } else {
             // send 404
         }
