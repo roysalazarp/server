@@ -28,7 +28,7 @@ taskdebug(char *fmt, ...)
 	char *p;
 	static int fd = -1;
 
-// return;
+return;
 	va_start(arg, fmt);
 	vfprint(1, fmt, arg);
 	va_end(arg);
@@ -217,8 +217,6 @@ contextswitch(Context *from, Context *to)
 		fprint(2, "swapcontext failed: %r\n");
 		assert(0);
 	}
-
-    printf("switch!!!\n");
 }
 
 void

@@ -24,6 +24,7 @@
 typedef struct {
     char server[20];
     char uri[20];
+    Channel *done;
 } ServerUri;
 
 typedef struct {
@@ -31,14 +32,8 @@ typedef struct {
     int fd;
 } MFD;
 
-void get_a(void *v) {
-    MFD *mfd = (MFD *)v;
-    Memory *memory = mfd->memory;
-    int client_fd = mfd->fd;
-
-	ServerUri *server_uri = memory_alloc(memory, sizeof(ServerUri));
-    memcpy(server_uri->server, "localhost", strlen("localhost"));
-    memcpy(server_uri->uri, "/a", strlen("/a"));
+void make_request(void *v) {
+    ServerUri *server_uri = (ServerUri *)v;
 
     int filedescriptor, n;
 	char buf[512];
@@ -52,13 +47,42 @@ void get_a(void *v) {
     while((n = ark_fd_read(filedescriptor, buf, sizeof buf)) > 0)
         ;
     close(filedescriptor);
+    chansend(server_uri->done, NULL);
+}
+
+void get_a(void *v) {
+    MFD *mfd = (MFD *)v;
+    Memory *memory = mfd->memory;
+    int client_fd = mfd->fd;
+
+	ServerUri *server_uri = memory_alloc(memory, sizeof(ServerUri));
+    memcpy(server_uri->server, "localhost", strlen("localhost"));
+    memcpy(server_uri->uri, "/a", strlen("/a"));
+
+    int stack_size = KB(8);
+    
+    printf("get_a req to /a\n");
+    Channel *done = chancreate(sizeof(void*), 0);
+    server_uri->done = done;
+    ark_task_create(make_request, server_uri, stack_size);
+    chanrecv(done, NULL);
+    printf("get_a req to /a DONE\n");
+
+	ServerUri *server_uri_1 = memory_alloc(memory, sizeof(ServerUri));
+    memcpy(server_uri_1->server, "localhost", strlen("localhost"));
+    memcpy(server_uri_1->uri, "/b", strlen("/b"));
+
+    printf("get_a req to /b\n");
+    Channel *done_1 = chancreate(sizeof(void*), 0);
+    server_uri_1->done = done_1;
+    ark_task_create(make_request, server_uri_1, stack_size);
+    chanrecv(done_1, NULL);
+    printf("get_a req to /b DONE\n");
 
     char resbuf[1000];
     snprintf(resbuf, sizeof resbuf, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 11\r\n\r\nHello World");
     int len = strlen(resbuf);
     ark_fd_write(client_fd, resbuf, len);
-
-    memory_free(memory);
 }
 
 void get_b(void *v) {
@@ -70,38 +94,43 @@ void get_b(void *v) {
     memcpy(server_uri->server, "localhost", strlen("localhost"));
     memcpy(server_uri->uri, "/b", strlen("/b"));
 
-    int filedescriptor, n;
-	char buf[512];
-	
-    if((filedescriptor = netdial(TCP, server_uri->server, 3000)) < 0){
-        fprintf(stderr, "dial %s: %s (%s)\n", server_uri->server, strerror(errno), taskgetstate());
-        assert(0);
-    }
-    snprintf(buf, sizeof buf, "GET %s HTTP/1.0\r\nHost: %s\r\n\r\n", server_uri->uri, server_uri->server);
-    ark_fd_write(filedescriptor, buf, strlen(buf));
-    while((n = ark_fd_read(filedescriptor, buf, sizeof buf)) > 0)
-        ;
-    close(filedescriptor);
+    int stack_size = KB(8);
+    
+    printf("get_b req to /b\n");
+    Channel *done = chancreate(sizeof(void*), 0);
+    server_uri->done = done;
+    ark_task_create(make_request, server_uri, stack_size);
+    chanrecv(done, NULL);
+    printf("get_b req to /b DONE\n");
+
+	ServerUri *server_uri_1 = memory_alloc(memory, sizeof(ServerUri));
+    memcpy(server_uri_1->server, "localhost", strlen("localhost"));
+    memcpy(server_uri_1->uri, "/a", strlen("/a"));
+
+    printf("get_b req to /a\n");
+    Channel *done_1 = chancreate(sizeof(void*), 0);
+    server_uri_1->done = done_1;
+    ark_task_create(make_request, server_uri_1, stack_size);
+    chanrecv(done_1, NULL);
+    printf("get_b req to /a DONE\n");
 
     char resbuf[1000];
     snprintf(resbuf, sizeof resbuf, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 11\r\n\r\nHello World");
     int len = strlen(resbuf);
     ark_fd_write(client_fd, resbuf, len);
-
-    memory_free(memory);
 }
 
 void handler(void *arg) {
     int fd = *(int *)arg;
 
     for (;;) {
-        Memory *memory = reserve_memory(PAGE_SIZE * 15);
         ark_fd_await(fd, 'r');
     
         int client_fd;
         ark_client_accept(&client_fd, fd);
         ark_fd_await(client_fd, 'r');
 
+        Memory *memory = reserve_memory(PAGE_SIZE * 15);
         MFD *mfd = memory_alloc(memory, sizeof(MFD));
         mfd->memory = memory;
         mfd->fd = client_fd;
