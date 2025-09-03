@@ -20,6 +20,7 @@
 #define MYDIR "./assets"
 
 #define PAGE_SIZE KB(4)
+#define MAX_REQUEST_MSG_SIZE KB(2)
 
 typedef struct {
     char server[20];
@@ -30,7 +31,9 @@ typedef struct {
 typedef struct {
     Memory *memory;
     int fd;
-} MFD;
+} RequestCtx;
+
+ArkComponentArray component_array;
 
 void make_request(void *v) {
     ServerUri *server_uri = (ServerUri *)v;
@@ -51,11 +54,9 @@ void make_request(void *v) {
 }
 
 void get_a(void *v) {
-    MFD *mfd = (MFD *)v;
-    Memory *memory = mfd->memory;
-    int client_fd = mfd->fd;
+    RequestCtx *request_ctx = (RequestCtx *)v;
 
-	ServerUri *server_uri = memory_alloc(memory, sizeof(ServerUri));
+	ServerUri *server_uri = memory_alloc(request_ctx->memory, sizeof(ServerUri));
     memcpy(server_uri->server, "localhost", strlen("localhost"));
     memcpy(server_uri->uri, "/a", strlen("/a"));
 
@@ -68,7 +69,7 @@ void get_a(void *v) {
     chanrecv(done, NULL);
     printf("get_a req to /a DONE\n");
 
-	ServerUri *server_uri_1 = memory_alloc(memory, sizeof(ServerUri));
+	ServerUri *server_uri_1 = memory_alloc(request_ctx->memory, sizeof(ServerUri));
     memcpy(server_uri_1->server, "localhost", strlen("localhost"));
     memcpy(server_uri_1->uri, "/b", strlen("/b"));
 
@@ -82,15 +83,13 @@ void get_a(void *v) {
     char resbuf[1000];
     snprintf(resbuf, sizeof resbuf, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 11\r\n\r\nHello World");
     int len = strlen(resbuf);
-    ark_fd_write(client_fd, resbuf, len);
+    ark_fd_write(request_ctx->fd, resbuf, len);
 }
 
 void get_b(void *v) {
-    MFD *mfd = (MFD *)v;
-    Memory *memory = mfd->memory;
-    int client_fd = mfd->fd;
+    RequestCtx *request_ctx = (RequestCtx *)v;
 
-	ServerUri *server_uri = memory_alloc(memory, sizeof(ServerUri));
+	ServerUri *server_uri = memory_alloc(request_ctx->memory, sizeof(ServerUri));
     memcpy(server_uri->server, "localhost", strlen("localhost"));
     memcpy(server_uri->uri, "/b", strlen("/b"));
 
@@ -103,7 +102,7 @@ void get_b(void *v) {
     chanrecv(done, NULL);
     printf("get_b req to /b DONE\n");
 
-	ServerUri *server_uri_1 = memory_alloc(memory, sizeof(ServerUri));
+	ServerUri *server_uri_1 = memory_alloc(request_ctx->memory, sizeof(ServerUri));
     memcpy(server_uri_1->server, "localhost", strlen("localhost"));
     memcpy(server_uri_1->uri, "/a", strlen("/a"));
 
@@ -117,7 +116,48 @@ void get_b(void *v) {
     char resbuf[1000];
     snprintf(resbuf, sizeof resbuf, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 11\r\n\r\nHello World");
     int len = strlen(resbuf);
-    ark_fd_write(client_fd, resbuf, len);
+    ark_fd_write(request_ctx->fd, resbuf, len);
+}
+
+int string_compare(char *str, char *str2, size_t str_length) {
+    if (strncmp(str, str2, str_length) == 0 && strlen(str2) == str_length) {
+        return 1;
+    }
+    return 0;
+}
+
+int find_component(RString *component, char *name) {
+    uint32_t i;
+    for (i = 0; i < component_array.count; i++) {
+        if (string_compare(component_array.names[i].data, name, component_array.names[i].length)) {
+            *component = component_array.components[i];
+            return 0;
+        }
+    }
+    return -1;
+}
+
+void not_found(void *v) {
+    RequestCtx *request_ctx = (RequestCtx *)v;
+
+    RString component = {0};
+    find_component(&component, "not_found");
+    assert(component.length);
+
+    char response[KB(2)];
+    bzero(response, KB(2));
+    sprintf(response,
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Length: %d\r\n"
+        "Content-Type: text/html\r\n\r\n"
+        "%s",
+        component.length, component.data);
+    
+    int response_length = strlen(response);
+    ark_fd_write(request_ctx->fd, response, response_length);
+    
+    close(request_ctx->fd);
+    memory_free(request_ctx->memory);
 }
 
 void handler(void *arg) {
@@ -125,18 +165,16 @@ void handler(void *arg) {
 
     for (;;) {
         ark_fd_await(fd, 'r');
-    
-        int client_fd;
-        ark_client_accept(&client_fd, fd);
-        ark_fd_await(client_fd, 'r');
-
+        
         Memory *memory = reserve_memory(PAGE_SIZE * 15);
-        MFD *mfd = memory_alloc(memory, sizeof(MFD));
-        mfd->memory = memory;
-        mfd->fd = client_fd;
+        RequestCtx *request_ctx = memory_alloc(memory, sizeof(RequestCtx));
+        request_ctx->memory = memory;
+        
+        ark_client_accept(&request_ctx->fd, fd);
+        ark_fd_await(request_ctx->fd, 'r');
 
-        char *request = memory_alloc(memory, sizeof(char) * 1000);
-        ark_fd_read(client_fd, request, 1000);
+        char *request = memory_alloc(memory, sizeof(char) * MAX_REQUEST_MSG_SIZE);
+        ark_fd_read(request_ctx->fd, request, MAX_REQUEST_MSG_SIZE);
         size_t request_length = strlen(request);
 
         ARKHttpMessage http_msg = {0};
@@ -146,13 +184,11 @@ void handler(void *arg) {
         size_t uri_length = http_msg.uri.end_offset - http_msg.uri.start_offset;
         
         if (strncmp(uri, "/a", uri_length) == 0 && uri_length == strlen("/a")) {
-            int stack_size = KB(8);
-            ark_task_create(get_a, mfd, stack_size);
+            ark_task_create(get_a, request_ctx, KB(8));
         } else if (strncmp(uri, "/b", uri_length) == 0 && uri_length == strlen("/b")) {
-            int stack_size = KB(8);
-            ark_task_create(get_b, mfd, stack_size);
+            ark_task_create(get_b, request_ctx, KB(8));
         } else {
-            // send 404
+            ark_task_create(not_found, request_ctx, KB(8));
         }
     }
 }
@@ -194,14 +230,12 @@ int main() {
         array_of_file_contents[i] = file_content;
     }
 
-    ArkComponentArray component_array = {0};
     ark_compile_templates(&component_array, array_of_filepaths, array_of_file_contents, num_of_filepaths);
     
     int fd;
     ark_setup_server(&fd, (uint16_t)8080);
 
-    int stack_size = KB(8); /** NOTE: Keep an eye that the stack size does not become a problem */
-    ark_task_create(handler, &fd, stack_size); 
+    ark_task_create(handler, &fd, KB(8)); /** NOTE: Keep an eye that the stack size does not become a problem */
 	ark_task_run_scheduler();
     
     return 0;
