@@ -30,12 +30,7 @@ typedef uint8_t boolean;
 typedef struct {
     char *data;
     uint32_t length;
-} RString;
-
-typedef struct {
-    char *data;
-    uint32_t length;
-} MString;
+} String;
 
 #define U32_BITS 32
 

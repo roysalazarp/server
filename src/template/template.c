@@ -56,27 +56,14 @@ const char html_attr_key_token[256] = {
 #define XFOR            0x782D666F72000000 /* "x-for"  */
 
 typedef struct {
-    RString name;
-    RString value;
-} RAttr;
+    String name;
+    String value;
+} Attr;
 
 typedef struct {
-    MString name;
-    MString value;
-} MAttr;
-
-typedef struct AttrLLItem AttrLLItem;
-struct AttrLLItem {
-    AttrLLItem *next;
-    MAttr attr;
-};
-
-typedef struct {
-    AttrLLItem *head;
+    Attr *attr;
     uint32_t count;
-    uint32_t rendered;    
-    uint64_t identifier;
-} AttrLL;
+} AttrsArray;
 
 typedef struct {
     uint32_t start;
@@ -93,9 +80,15 @@ typedef struct {
 typedef struct Template Template;
 struct Template {
     Template *next;
-    RString name;
-    RString component;
+    String name;
+    String component;
 };
+
+typedef struct {
+    String *names;
+    String *components;
+    uint32_t count;
+} TemplatesArray;
 
 typedef enum {
     TOKEN_INVALID,
@@ -129,12 +122,12 @@ typedef struct {
 
 typedef struct {
     Token token;
-    RString name;
+    String name;
 } NextToken;
 
 typedef struct {
-    RString file_path;
-    RString file_content;
+    String file_path;
+    String file_content;
     uint32_t cursor;
     uint32_t bol; /* beginning of line */
     uint32_t line_number;
@@ -175,7 +168,7 @@ uint8_t strlen_u64(uint64_t x) {
 }
 
 /* returns 1 if reached EOF */
-int parse_next_tag_attr(RAttr *attr, char *html, uint32_t html_length, uint32_t *cursor) {    
+int parse_next_tag_attr(Attr *attr, char *html, uint32_t html_length, uint32_t *cursor) {    
     uint8_t attr_tk = 0;
     uint32_t str_start = 0;
     uint8_t quotation = 0;
@@ -323,7 +316,7 @@ int parse_next_tag_attr(RAttr *attr, char *html, uint32_t html_length, uint32_t 
     __builtin_unreachable();
 }
 
-void print_tag_error(RString file_path, RString file_content, uint32_t line_number, uint32_t bol, Range identifier, char error_msg[] ) {
+void print_tag_error(String file_path, String file_content, uint32_t line_number, uint32_t bol, Range identifier, char error_msg[] ) {
     printf("%s:\n", error_msg);
     printf("    file: %.*s\n", file_path.length, file_path.data);
     printf("    line: %d\n", line_number);
@@ -409,7 +402,7 @@ int skip_whitespace(char *text, uint32_t text_length, uint32_t *cursor) {
     __builtin_unreachable();
 }
 
-int get_next_tag(RString *tag, char *ptr, uint64_t identifier, TagType tag_type) {
+int get_next_tag(String *tag, char *ptr, uint64_t identifier, TagType tag_type) {
     if (tag_type == TAG_INVALID) {
         return -1;
     }
@@ -500,7 +493,7 @@ int get_next_tag(RString *tag, char *ptr, uint64_t identifier, TagType tag_type)
     return -1;
 }
 
-int get_token(NextToken *next_token, char *html, uint32_t html_length, uint32_t *cursor, AttrLL *ll) {
+int get_token(NextToken *next_token, char *html, uint32_t html_length, uint32_t *cursor, AttrsArray *attrs_array) {
     uint32_t tk = *(uint32_t *)(html + (*cursor));
     
     if ((__builtin_bswap32(tk) & MASK32_2) == DOCB) {
@@ -536,12 +529,11 @@ int get_token(NextToken *next_token, char *html, uint32_t html_length, uint32_t 
 
         (*cursor) += strlen_u64(next_token->token.identifier);
 
-        AttrLLItem *prev = NULL;
-        AttrLLItem *curr = NULL;
-
-        while (true) {                            
-            RAttr attr = {0};
-            parse_next_tag_attr(&attr, html, html_length, cursor);
+        uint32_t tmpcursor = *cursor;
+        uint32_t attr_count = 0;
+        while (true) {
+            Attr attr = {0};
+            parse_next_tag_attr(&attr, html, html_length, &tmpcursor);
 
             if (attr.name.data == NULL && attr.value.data == NULL) {
                 /** no more attrs */
@@ -557,31 +549,55 @@ int get_token(NextToken *next_token, char *html, uint32_t html_length, uint32_t 
                     assert(0);
                     /* print error! */
                 } else {
-                    if (ll && next_token->token.identifier == ll->identifier) {
-                        curr = malloc(sizeof(AttrLLItem));
-                        bzero(curr, sizeof(AttrLLItem));
+                    attr_count++;
+                }
+            }
+        }
 
-                        curr->attr.name.data = malloc(attr.name.length + 1);
-                        curr->attr.name.length = attr.name.length;
-                        memcpy(curr->attr.name.data, attr.name.data, attr.name.length);
-                        curr->attr.name.data[attr.name.length] = '\0';
+        if (attr_count && attrs_array) {
+            attrs_array->attr = malloc(attr_count * sizeof(Attr));
+            bzero(attrs_array->attr, attr_count * sizeof(Attr));
+        }
+
+        uint32_t i = 0;        
+        while (true) {
+            Attr attr = {0};
+            parse_next_tag_attr(&attr, html, html_length, cursor);
+
+            if (attr.name.data == NULL && attr.value.data == NULL) {
+                /** no more attrs */
+                break;
+            }
+
+            uint32_t attr_key = *(uint32_t *)(attr.name.data);
+            
+            if ((__builtin_bswap32(attr_key) & MASK32_4) == NAMEATTRKEY && attr.name.length == 4) {
+                next_token->name = attr.value;
+                continue;
+            } else {
+                if (next_token->token.kind != TOKEN_XUSE) {
+                    assert(0);
+                    /* print error! */
+                } else {
+                    if (attr_count && attrs_array) {
+                        attrs_array->attr[i] = attr;
+    
+                        attrs_array->attr[i].name.data = malloc(attr.name.length + 1);
+                        attrs_array->attr[i].name.length = attr.name.length;
+                        memcpy(attrs_array->attr[i].name.data, attr.name.data, attr.name.length);
+                        attrs_array->attr[i].name.data[attr.name.length] = '\0';
                         
-                        curr->attr.value.data = malloc(attr.value.length + 1);
-                        curr->attr.value.length = attr.value.length;
-                        memcpy(curr->attr.value.data, attr.value.data, attr.value.length);
-                        curr->attr.value.data[attr.value.length] = '\0';
-                        
-                        if (!prev) {
-                            ll->head = curr;
-                        } else {
-                            prev->next = curr;
-                        }
-                        
-                        prev = curr;
-                        ll->count++;
+                        attrs_array->attr[i].value.data = malloc(attr.value.length + 1);
+                        attrs_array->attr[i].value.length = attr.value.length;
+                        memcpy(attrs_array->attr[i].value.data, attr.value.data, attr.value.length);
+                        attrs_array->attr[i].value.data[attr.value.length] = '\0';
+    
+                        attrs_array->count++;
                     }
                 }
             }
+
+            i++;
         }
 
         if (!next_token->name.data) {
@@ -635,6 +651,138 @@ int get_token(NextToken *next_token, char *html, uint32_t html_length, uint32_t 
     return 0;
 }
 
+int ark_make_templates_array(TemplatesArray *templates_array, uint32_t *html_file_mask, char **array_of_filepaths, char **file_content_array, uint32_t array_length) {
+    uint32_t i;
+    
+    /* We'll count the components here */
+    templates_array->count = 0;
+    
+    for (i = 0; i < array_length; i++) {
+        if (IS_U32_BIT_OFF(html_file_mask, i)) {
+            continue;
+        }
+
+        char *file_path = array_of_filepaths[i];
+        char *file_content = file_content_array[i];
+
+        Lexer lexer = {0};
+
+        lexer.file_content.data = file_content;
+        lexer.file_content.length = strlen(file_content);
+        lexer.cursor = 0;
+
+        boolean started = false;
+
+        while (lexer.cursor < lexer.file_content.length) {
+            if (started) { /* TODO: think of a way to remove this check */
+                if (++lexer.cursor == lexer.file_content.length) {
+                    break;
+                }
+            } else {
+                started = true;
+            }
+            
+            NextToken nt = {0};
+
+            get_token(&nt, lexer.file_content.data, lexer.file_content.length, &lexer.cursor, NULL);
+
+            switch (nt.token.kind) {
+                case TOKEN_XDEF: {
+                    if (nt.token.tag.type == TAG_OPENING) {
+                        templates_array->names[templates_array->count].data = malloc((nt.name.length + 1) * sizeof(char));
+                        memcpy(templates_array->names[templates_array->count].data, nt.name.data, nt.name.length);
+                        templates_array->names[templates_array->count].data[nt.name.length] = '\0';
+                        templates_array->names[templates_array->count].length = nt.name.length;
+
+                        templates_array->components[templates_array->count].data = lexer.file_content.data + nt.token.tag.markup.end;
+                        break;
+                    } 
+                    
+                    if (nt.token.tag.type == TAG_CLOSING) {
+                        char *start = templates_array->components[templates_array->count].data;
+                        char *end = lexer.file_content.data + nt.token.tag.markup.start;
+
+                        templates_array->components[templates_array->count].length = end - start;
+
+                        templates_array->count++;
+                        break;
+                    }
+
+                    assert(0);
+                }       
+                default: {
+                    break;
+                }
+            }
+        }
+    }
+
+    return 0;
+}
+
+int ark_components_count(uint32_t *count, uint32_t *html_file_mask, char **array_of_filepaths, char **file_content_array, uint32_t array_length) {
+    uint32_t i;
+    for (i = 0; i < array_length; i++) {
+        if (IS_U32_BIT_OFF(html_file_mask, i)) {
+            continue;
+        }
+
+        char *file_path = array_of_filepaths[i];
+        char *file_content = file_content_array[i];
+
+        Lexer lexer = {0};
+
+        lexer.file_content.data = file_content;
+        lexer.file_content.length = strlen(file_content);
+        lexer.cursor = 0;
+
+        boolean started = false;
+
+        while (lexer.cursor < lexer.file_content.length) {
+            if (started) { /* TODO: think of a way to remove this check */
+                if (++lexer.cursor == lexer.file_content.length) {
+                    break;
+                }
+            } else {
+                started = true;
+            }
+            
+            NextToken nt = {0};
+
+            get_token(&nt, lexer.file_content.data, lexer.file_content.length, &lexer.cursor, NULL);
+
+            switch (nt.token.kind) {
+                case TOKEN_XDEF: {
+                    if (nt.token.tag.type == TAG_OPENING) {
+                        *count += 1;
+                    }
+                    break;
+                }       
+                default: {
+                    break;
+                }
+            }
+        }
+    }
+
+    return 0;
+}
+
+int ark_make_html_file_mask(uint32_t *html_file_mask, char **array_of_filepaths, uint32_t array_length) {
+    uint32_t i;
+    for (i = 0; i < array_length; i++) {
+        char *file_path = array_of_filepaths[i];
+        
+        uint64_t ext = *(uint64_t *)(file_path + strlen(file_path) - 5 /* .html */);
+        
+        if ((__builtin_bswap64(ext) & MASK64_5) == HTML_EXTENSION) {
+            TURN_ON_U32_BIT(html_file_mask, i);
+        }
+    }
+
+    return 0;
+}
+
 /*
 - DONE: Error if x-slot, x-val are not self-closing.
 - DONE: Error if x-def, x-fill, x-for do not have a pair (open + closing) xtags.
@@ -648,34 +796,8 @@ int get_token(NextToken *next_token, char *html, uint32_t html_length, uint32_t 
 
 - Error if recursive import.
 */
-int ark_compile_templates(ArkComponentArray *component_array, char **array_of_filepaths, char **file_content_array, uint32_t array_length) {
+int ark_validate_templates(uint32_t *html_file_mask, char **array_of_filepaths, char **file_content_array, uint32_t array_length) {
     uint32_t i;
-
-    Memory *memory = reserve_memory(PAGE_SIZE * 10);
-
-    uint32_t *html_file_mask = NULL;
-
-    uint32_t mask_size = array_length / U32_BITS;
-    mask_size = mask_size < 1 ? 1 : mask_size; /* ensure a minimum */
-
-    html_file_mask = memory_alloc(memory, mask_size * sizeof(uint32_t));
-
-    for (i = 0; i < array_length; i++) {
-        char *file_path = array_of_filepaths[i];
-        
-        uint64_t ext = *(uint64_t *)(file_path + strlen(file_path) - 5 /* .html */);
-        
-        if ((__builtin_bswap64(ext) & MASK64_5) == HTML_EXTENSION) {
-            TURN_ON_U32_BIT(html_file_mask, i);
-        }
-    }
-
-    Template *tmpl_head = NULL;
-    Template *prev_tmpl = NULL;
-    Template *tmpl = NULL;
-
-    uint32_t component_count = 0;
-    uint32_t max_template_name = 0;
 
     for (i = 0; i < array_length; i++) {
         if (IS_U32_BIT_OFF(html_file_mask, i)) {
@@ -724,7 +846,6 @@ int ark_compile_templates(ArkComponentArray *component_array, char **array_of_fi
                 }
                 case TOKEN_XDEF: {
                     if (nt.token.tag.type == TAG_OPENING) {
-                        component_count++;
                         if (oc.xdef) {
                             assert(0);
                         }
@@ -734,23 +855,8 @@ int ark_compile_templates(ArkComponentArray *component_array, char **array_of_fi
                             inside_xuse = false;
                         }
                         oc.xdef += 1;
-                        tmpl = memory_alloc(memory, sizeof(Template));
-                        tmpl->component.data = &lexer.file_content.data[nt.token.tag.markup.end];
-                        tmpl->name = nt.name;
-                        if (tmpl->name.length > max_template_name) {
-                            max_template_name = tmpl->name.length;
-                        }
-
-                        if (!prev_tmpl) {
-                            tmpl_head = tmpl;
-                            prev_tmpl = tmpl;
-                        } else {
-                            prev_tmpl->next = tmpl;
-                            prev_tmpl = tmpl;
-                        }
                     } else if (nt.token.tag.type == TAG_CLOSING) {
                         oc.xdef -= 1;
-                        tmpl->component.length= &lexer.file_content.data[nt.token.tag.markup.start] - tmpl->component.data;
                     }
                     break;
                 }
@@ -842,52 +948,50 @@ int ark_compile_templates(ArkComponentArray *component_array, char **array_of_fi
             }
         }
     }
+
+    return 0;
+}
+
+int ark_compile_templates(ArkComponentArray *component_array, uint32_t *html_file_mask, char **array_of_filepaths, char **file_content_array, uint32_t array_length) {
+    uint32_t component_count = 0;
+    ark_components_count(&component_count, html_file_mask, array_of_filepaths, file_content_array, array_length);
+
+    Memory *memory = reserve_memory(PAGE_SIZE * 10);
+
+    TemplatesArray templates_array = {0};
+    templates_array.names = memory_alloc(memory, sizeof(String) * component_count);
+    templates_array.components = memory_alloc(memory, sizeof(String) * component_count);
+    templates_array.count = 0;
     
-    max_template_name += 1; /* to account for null terminator */
+    ark_make_templates_array(&templates_array, html_file_mask, array_of_filepaths, file_content_array, array_length);
     
-    uint32_t block_size = max_template_name + sizeof(Template *);
-    void *component_lookup = memory_alloc(memory, component_count * block_size);
+    component_array->names = memory_alloc(memory, sizeof(String) * component_count);
+    component_array->components = memory_alloc(memory, sizeof(String) * component_count);
+    component_array->count = component_count;
+
+    uint32_t i;
     
-    Template* t_current = tmpl_head;
     for (i = 0; i < component_count; i++) {
-        char *template_name = (char *)((uint8_t *)component_lookup + (i * block_size));
-        Template **t = (Template **)(template_name + max_template_name);
-
-        memcpy(template_name, t_current->name.data, t_current->name.length);
-
-        *t = t_current;
-
-        t_current = t_current->next;
-    }
-
-    component_array->names = memory_alloc(memory, sizeof(RString) * component_count);
-    component_array->components = memory_alloc(memory, sizeof(RString) * component_count);
-
-    for (i = 0; i < component_count; i++) {
-        char *template_name = (char *)((uint8_t *)component_lookup + (i * block_size));
-        Template *t = *((Template **)(template_name + max_template_name));
+        component_array->names[i] = templates_array.names[i];
 
         char *rendering = LOCK_MEMORY(memory);
-        memcpy(rendering, t->component.data, t->component.length);
+        memcpy(rendering, templates_array.components[i].data, templates_array.components[i].length);
 
-        component_array->names[component_array->count].data = template_name;
-        component_array->names[component_array->count].length = strlen(template_name);
-
-        component_array->components[component_array->count].data = rendering;
+        component_array->components[i].data = rendering;
 
         Lexer lexer = {0};
         lexer.file_content.data = rendering;
         lexer.cursor = 0;
 
-        Template *import = NULL;
+        String import = {0};
         uint32_t import_cursor = 0;
 
         uint32_t saved_location = 0;
         
         uint32_t xfill_count = 0;
         
-        AttrLL ll = {0};
-        ll.identifier = XUSE;
+        AttrsArray attrs_array = {0};
+        uint32_t attrs_rendered = 0;
 
         go_again:;
         boolean repeat = false;
@@ -895,14 +999,20 @@ int ark_compile_templates(ArkComponentArray *component_array, char **array_of_fi
         while (lexer.file_content.data[lexer.cursor]) {
             NextToken nt = {0};
 
-            get_token(&nt, lexer.file_content.data, lexer.file_content.length, &lexer.cursor, ll.head ? NULL : &ll);
+            AttrsArray tmp = {0};
+            get_token(&nt, lexer.file_content.data, lexer.file_content.length, &lexer.cursor, &tmp);            
+            if (nt.token.kind == TOKEN_XUSE && attrs_array.count == 0) {
+                /** TOOD: This not working */
+                attrs_array = tmp;
+            }
+
             if (nt.token.kind == TOKEN_XUSE) {
                 repeat = true;
             }
 
             switch (nt.token.kind) {
                 case TOKEN_PLACEHOLDER: {
-                    RString name = {0};
+                    String name = {0};
 
                     char *p = lexer.file_content.data + nt.token.tag.markup.start;
                     p += 2; /** skip "{{" */
@@ -915,18 +1025,18 @@ int ark_compile_templates(ArkComponentArray *component_array, char **array_of_fi
                         name.length++;
                         p++;
                     }
-
-                    AttrLLItem* current = ll.head;
-                    while (current != NULL) {
-                        if (strncmp(current->attr.name.data, name.data, name.length) == 0) {
+                    
+                    uint32_t j;
+                    for (j = 0; j < attrs_array.count; j++) {
+                        if (strncmp(attrs_array.attr[j].name.data, name.data, name.length) == 0) {
                             Range placeholder = nt.token.tag.markup;
                         
                             char *insert_location = lexer.file_content.data + placeholder.start;
                             
                             size_t substring_to_remove_length = placeholder.end - placeholder.start;
 
-                            char *substring_to_insert = current->attr.value.data;
-                            size_t substring_to_insert_length = current->attr.value.length;
+                            char *substring_to_insert = attrs_array.attr[j].value.data;
+                            size_t substring_to_insert_length = attrs_array.attr[j].value.length;
 
                             {
                                 /** Expand/Shrink space where new substring will inserted so it fits perfectly */
@@ -937,32 +1047,26 @@ int ark_compile_templates(ArkComponentArray *component_array, char **array_of_fi
                             }
 
                             memcpy(insert_location, substring_to_insert, substring_to_insert_length);
-                            ll.rendered++;
+                            attrs_rendered++;
 
-                            if (ll.rendered == ll.count) {
-                                AttrLLItem *current = ll.head;
-                                while (current != NULL) {
-                                    AttrLLItem *next = current->next;
-
-                                    free(current->attr.name.data);
-                                    current->attr.name.data = NULL;
-                                    free(current->attr.value.data);
-                                    current->attr.value.data = NULL;
-                                    free(current);
-                                    current = NULL;
-                                    
-                                    current = next;
+                            if (attrs_rendered == attrs_array.count) {
+                                uint32_t k;
+                                for (k = 0; k < attrs_array.count; k++) {
+                                    free(attrs_array.attr[k].name.data);
+                                    attrs_array.attr[k].name.data = NULL;
+                                    free(attrs_array.attr[k].value.data);
+                                    attrs_array.attr[k].value.data = NULL;
                                 }
                                 
-                                ll.head = NULL;
-                                ll.count = 0;
-                                ll.rendered = 0;    
+                                free(attrs_array.attr);
+                                attrs_array.attr = NULL;
+                                
+                                bzero(&attrs_array, sizeof(AttrsArray));
+                                attrs_rendered = 0;    
                             }
 
                             break;
                         }
-                        
-                        current = current->next;
                     }
 
                     printf("\n");
@@ -976,10 +1080,10 @@ int ark_compile_templates(ArkComponentArray *component_array, char **array_of_fi
 
                     uint32_t j;
                     for (j = 0; j < component_count; j++) {
-                        char *name = (char *)((uint8_t *)component_lookup + (j * block_size));
+                        String name = templates_array.names[j];
                         
-                        if (strncmp(name, nt.name.data, nt.name.length) == 0 && strlen(name) == nt.name.length) {
-                            import = *((Template **)(name + max_template_name));
+                        if (strncmp(name.data, nt.name.data, nt.name.length) == 0 && name.length == nt.name.length) {
+                            import = templates_array.components[j];
                             break;
                         }
                     }
@@ -993,8 +1097,8 @@ int ark_compile_templates(ArkComponentArray *component_array, char **array_of_fi
                         
                         size_t substring_to_remove_length = tag_markup.end - tag_markup.start;
 
-                        char *substring_to_insert = import->component.data;
-                        size_t substring_to_insert_length = import->component.length;
+                        char *substring_to_insert = import.data;
+                        size_t substring_to_insert_length = import.length;
 
                         {
                             /** Expand/Shrink space where new substring will inserted so it fits perfectly */
@@ -1029,8 +1133,8 @@ int ark_compile_templates(ArkComponentArray *component_array, char **array_of_fi
                         
                         size_t substring_to_remove_length = closing_tag_markup.end - closing_tag_markup.start;
 
-                        char *substring_to_insert = import->component.data + import_cursor;
-                        size_t substring_to_insert_length = import->component.length - import_cursor;
+                        char *substring_to_insert = import.data + import_cursor;
+                        size_t substring_to_insert_length = import.length - import_cursor;
 
                         {
                             /** Expand/Shrink space where new substring will inserted so it fits perfectly */
@@ -1044,7 +1148,7 @@ int ark_compile_templates(ArkComponentArray *component_array, char **array_of_fi
                         
                         lexer.cursor = saved_location;
                         
-                        import = NULL;
+                        bzero(&import, sizeof(String));
                         import_cursor = 0;
                         saved_location = 0;
                     }
@@ -1059,9 +1163,9 @@ int ark_compile_templates(ArkComponentArray *component_array, char **array_of_fi
                             
                             size_t substring_to_remove_length = opening_tag_markup.end - opening_tag_markup.start;
 
-                            char *substring_to_insert = (import->component.data + import_cursor);
-                            RString xslot_selfclosing_tag = {0};
-                            get_next_tag(&xslot_selfclosing_tag, (import->component.data + import_cursor), XSLOT, TAG_SELFCLOSING);
+                            char *substring_to_insert = (import.data + import_cursor);
+                            String xslot_selfclosing_tag = {0};
+                            get_next_tag(&xslot_selfclosing_tag, (import.data + import_cursor), XSLOT, TAG_SELFCLOSING);
                             size_t substring_to_insert_length = xslot_selfclosing_tag.data - substring_to_insert;
 
                             import_cursor += substring_to_insert_length + xslot_selfclosing_tag.length;
@@ -1116,8 +1220,7 @@ int ark_compile_templates(ArkComponentArray *component_array, char **array_of_fi
         
         UNLOCK_MEMORY(memory, &rendering[lexer.cursor + 1]);
         rendering[lexer.cursor] = '\0';
-        component_array->components[component_array->count].length = lexer.cursor;
-        component_array->count++;
+        component_array->components[i].length = lexer.cursor;
     }
 
     return 0;

@@ -126,7 +126,7 @@ int string_compare(char *str, char *str2, size_t str_length) {
     return 0;
 }
 
-int find_component(RString *component, char *name) {
+int find_component(String *component, char *name) {
     uint32_t i;
     for (i = 0; i < component_array.count; i++) {
         if (string_compare(component_array.names[i].data, name, component_array.names[i].length)) {
@@ -140,7 +140,7 @@ int find_component(RString *component, char *name) {
 void not_found(void *v) {
     RequestCtx *request_ctx = (RequestCtx *)v;
 
-    RString component = {0};
+    String component = {0};
     find_component(&component, "not_found");
     assert(component.length);
 
@@ -229,8 +229,15 @@ int main() {
 
         array_of_file_contents[i] = file_content;
     }
+    
+    uint32_t mask_size = (num_of_filepaths / U32_BITS) ? (num_of_filepaths / U32_BITS) : 1; /* ensure a minimum */
+    uint32_t *html_file_mask = memory_alloc(memory, mask_size * sizeof(uint32_t));
 
-    ark_compile_templates(&component_array, array_of_filepaths, array_of_file_contents, num_of_filepaths);
+    ark_make_html_file_mask(html_file_mask, array_of_filepaths, num_of_filepaths);
+    
+    ark_validate_templates(html_file_mask, array_of_filepaths, array_of_file_contents, num_of_filepaths);
+    
+    ark_compile_templates(&component_array, html_file_mask, array_of_filepaths, array_of_file_contents, num_of_filepaths);
     
     int fd;
     ark_setup_server(&fd, (uint16_t)8080);
