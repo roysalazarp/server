@@ -671,17 +671,7 @@ int ark_make_templates_array(TemplatesArray *templates_array, uint32_t *html_fil
         lexer.file_content.length = strlen(file_content);
         lexer.cursor = 0;
 
-        boolean started = false;
-
         while (lexer.cursor < lexer.file_content.length) {
-            if (started) { /* TODO: think of a way to remove this check */
-                if (++lexer.cursor == lexer.file_content.length) {
-                    break;
-                }
-            } else {
-                started = true;
-            }
-            
             NextToken nt = {0};
 
             get_token(&nt, lexer.file_content.data, lexer.file_content.length, &lexer.cursor, NULL);
@@ -714,6 +704,8 @@ int ark_make_templates_array(TemplatesArray *templates_array, uint32_t *html_fil
                     break;
                 }
             }
+
+            lexer.cursor++;
         }
     }
 
@@ -736,17 +728,7 @@ int ark_components_count(uint32_t *count, uint32_t *html_file_mask, char **array
         lexer.file_content.length = strlen(file_content);
         lexer.cursor = 0;
 
-        boolean started = false;
-
         while (lexer.cursor < lexer.file_content.length) {
-            if (started) { /* TODO: think of a way to remove this check */
-                if (++lexer.cursor == lexer.file_content.length) {
-                    break;
-                }
-            } else {
-                started = true;
-            }
-            
             NextToken nt = {0};
 
             get_token(&nt, lexer.file_content.data, lexer.file_content.length, &lexer.cursor, NULL);
@@ -762,6 +744,8 @@ int ark_components_count(uint32_t *count, uint32_t *html_file_mask, char **array
                     break;
                 }
             }
+
+            lexer.cursor++;
         }
     }
 
@@ -819,17 +803,8 @@ int ark_validate_templates(uint32_t *html_file_mask, char **array_of_filepaths, 
 
         OpenClose oc = {0};
         boolean inside_xuse = false;
-        boolean started = false;
 
         while (lexer.cursor < lexer.file_content.length) {
-            if (started) { /* TODO: think of a way to remove this check */
-                if (++lexer.cursor == lexer.file_content.length) {
-                    break;
-                }
-            } else {
-                started = true;
-            }
-            
             NextToken nt = {0};
 
             get_token(&nt, lexer.file_content.data, lexer.file_content.length, &lexer.cursor, NULL);
@@ -927,6 +902,8 @@ int ark_validate_templates(uint32_t *html_file_mask, char **array_of_filepaths, 
                     break;
                 }
             }
+
+            lexer.cursor++;
         }
     
         if (oc.xdef | oc.xuse | oc.xfill | oc.xfor) {
