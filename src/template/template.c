@@ -107,6 +107,7 @@ typedef enum  { TAG_INVALID, TAG_OPENING, TAG_CLOSING, TAG_SELFCLOSING } TagType
 typedef struct {
     TagType type;
     Range markup;
+    uint32_t attr_start;
 } Tag;
 
 typedef struct {
@@ -119,11 +120,6 @@ typedef struct {
     TokenKind kind;
     uint64_t identifier;
 } TokenType;
-
-typedef struct {
-    Token token;
-    String name;
-} NextToken;
 
 typedef struct {
     String file_path;
@@ -493,23 +489,100 @@ int get_next_tag(String *tag, char *ptr, uint64_t identifier, TagType tag_type) 
     return -1;
 }
 
-int get_token(NextToken *next_token, char *html, uint32_t html_length, uint32_t *cursor, AttrsArray *attrs_array) {
+int tag_attr_count(uint32_t *count, uint32_t attr_start, char *html, uint32_t html_length) {
+    assert(attr_start);
+
+    while (true) {
+        Attr attr = {0};
+        parse_next_tag_attr(&attr, html, html_length, &attr_start);
+
+        if (attr.name.data == NULL && attr.value.data == NULL) {
+            /** no more attrs */
+            break;
+        }
+        
+        (*count) += 1;
+    }
+
+    return 0;
+}
+
+int tag_attrs_lengths(uint32_t *names_lengths, uint32_t *values_lengths, uint32_t attr_count, uint32_t attr_start, char *html, uint32_t html_length) {
+    assert(attr_start);
+
+    uint32_t i;
+    for (i = 0; i < attr_count; i++) {
+        Attr attr = {0};
+        parse_next_tag_attr(&attr, html, html_length, &attr_start);
+
+        if (attr.name.data == NULL && attr.value.data == NULL) {
+            /** no more attrs */
+            break;
+        }
+
+        names_lengths[i] = attr.name.length + 1;
+        values_lengths[i] = attr.value.length + 1;
+    }
+
+    return 0;
+}
+
+int get_tag_attrs(AttrsArray *attrs_array, uint32_t attr_start, char *html, uint32_t html_length) {
+    assert(attr_start);
+
+    uint32_t i;
+    for (i = 0; i < attrs_array->count; i++) {
+        Attr attr = {0};
+        parse_next_tag_attr(&attr, html, html_length, &attr_start);
+
+        if (attr.name.data == NULL && attr.value.data == NULL) {
+            /** no more attrs */
+            break;
+        }
+
+        attrs_array->attr[i].name.length = attr.name.length;
+        memcpy(attrs_array->attr[i].name.data, attr.name.data, attr.name.length);
+        attrs_array->attr[i].name.data[attr.name.length] = '\0';
+        
+        attrs_array->attr[i].value.length = attr.value.length;
+        memcpy(attrs_array->attr[i].value.data, attr.value.data, attr.value.length);
+        attrs_array->attr[i].value.data[attr.value.length] = '\0';
+    }
+
+    return 0;
+}
+
+int locate_tag_name_attr(uint32_t *name_attr_index, AttrsArray *attrs_array) {
+    uint32_t i;
+    for (i = 0; i < attrs_array->count; i++) {
+
+        uint32_t attr_key = *(uint32_t *)(attrs_array->attr[i].name.data);
+        if ((__builtin_bswap32(attr_key) & MASK32_4) == NAMEATTRKEY && attrs_array->attr[i].name.length == 4) {
+            *name_attr_index = i;
+            return 0;
+        }
+    }
+    
+    return -1;
+}
+
+int get_token(Token *next_token, char *html, uint32_t html_length, uint32_t *cursor) {
     uint32_t tk = *(uint32_t *)(html + (*cursor));
     
     if ((__builtin_bswap32(tk) & MASK32_2) == DOCB) {
-        next_token->token.tag.markup.start = (*cursor);
-        next_token->token.kind = TOKEN_PLACEHOLDER;
+        next_token->tag.markup.start = (*cursor);
+        next_token->kind = TOKEN_PLACEHOLDER;
 
         while (true) {
             if (++(*cursor) == html_length) {
-                next_token->token.kind = TOKEN_END;
+                next_token->kind = TOKEN_END;
                 return 1;
             }
             
             uint32_t dccb = *(uint32_t *)(html + (*cursor));
             if ((__builtin_bswap32(dccb) & MASK32_2) == DCCB) {
                 (*cursor) += 2;
-                next_token->token.tag.markup.end = (*cursor);
+                next_token->tag.markup.end = (*cursor);
                 break;
             }
         }
@@ -518,48 +591,20 @@ int get_token(NextToken *next_token, char *html, uint32_t html_length, uint32_t 
     }
 
     if ((__builtin_bswap32(tk) & MASK32_3) == XOPEN) {
-        next_token->token.tag.markup.start = (*cursor);
+        next_token->tag.markup.start = (*cursor);
         (*cursor) += 1;
         
         uint64_t kind = *(uint64_t *)(html + (*cursor));
 
         TokenType tt = token_type(kind);
-        next_token->token.kind = tt.kind;
-        next_token->token.identifier = tt.identifier;
+        next_token->kind = tt.kind;
+        next_token->identifier = tt.identifier;
 
-        (*cursor) += strlen_u64(next_token->token.identifier);
+        (*cursor) += strlen_u64(next_token->identifier);
 
-        uint32_t tmpcursor = *cursor;
-        uint32_t attr_count = 0;
-        while (true) {
-            Attr attr = {0};
-            parse_next_tag_attr(&attr, html, html_length, &tmpcursor);
+        next_token->tag.attr_start = *cursor;
 
-            if (attr.name.data == NULL && attr.value.data == NULL) {
-                /** no more attrs */
-                break;
-            }
-
-            uint32_t attr_key = *(uint32_t *)(attr.name.data);
-            
-            if ((__builtin_bswap32(attr_key) & MASK32_4) == NAMEATTRKEY && attr.name.length == 4) {
-                next_token->name = attr.value;
-            } else {
-                if (next_token->token.kind != TOKEN_XUSE) {
-                    assert(0);
-                    /* print error! */
-                } else {
-                    attr_count++;
-                }
-            }
-        }
-
-        if (attr_count && attrs_array) {
-            attrs_array->attr = malloc(attr_count * sizeof(Attr));
-            bzero(attrs_array->attr, attr_count * sizeof(Attr));
-        }
-
-        uint32_t i = 0;        
+        /** skip attributes */
         while (true) {
             Attr attr = {0};
             parse_next_tag_attr(&attr, html, html_length, cursor);
@@ -567,45 +612,6 @@ int get_token(NextToken *next_token, char *html, uint32_t html_length, uint32_t 
             if (attr.name.data == NULL && attr.value.data == NULL) {
                 /** no more attrs */
                 break;
-            }
-
-            uint32_t attr_key = *(uint32_t *)(attr.name.data);
-            
-            if ((__builtin_bswap32(attr_key) & MASK32_4) == NAMEATTRKEY && attr.name.length == 4) {
-                next_token->name = attr.value;
-                continue;
-            } else {
-                if (next_token->token.kind != TOKEN_XUSE) {
-                    assert(0);
-                    /* print error! */
-                } else {
-                    if (attr_count && attrs_array) {
-                        attrs_array->attr[i] = attr;
-    
-                        attrs_array->attr[i].name.data = malloc(attr.name.length + 1);
-                        attrs_array->attr[i].name.length = attr.name.length;
-                        memcpy(attrs_array->attr[i].name.data, attr.name.data, attr.name.length);
-                        attrs_array->attr[i].name.data[attr.name.length] = '\0';
-                        
-                        attrs_array->attr[i].value.data = malloc(attr.value.length + 1);
-                        attrs_array->attr[i].value.length = attr.value.length;
-                        memcpy(attrs_array->attr[i].value.data, attr.value.data, attr.value.length);
-                        attrs_array->attr[i].value.data[attr.value.length] = '\0';
-    
-                        attrs_array->count++;
-                    }
-                }
-            }
-
-            i++;
-        }
-
-        if (!next_token->name.data) {
-            if (next_token->token.kind == TOKEN_XFILL || next_token->token.kind == TOKEN_XSLOT) {
-                /* it's ok */
-            } else {
-                /* print error! */
-                assert(0);
             }
         }
 
@@ -615,37 +621,37 @@ int get_token(NextToken *next_token, char *html, uint32_t html_length, uint32_t 
         assert(ch == '>');
 
         if (prev_ch == '/') {
-            next_token->token.tag.type = TAG_SELFCLOSING;
+            next_token->tag.type = TAG_SELFCLOSING;
             (*cursor)++; /* skip '>' */
-            next_token->token.tag.markup.end = (*cursor);
+            next_token->tag.markup.end = (*cursor);
         } else {
-            next_token->token.tag.type = TAG_OPENING;
+            next_token->tag.type = TAG_OPENING;
             (*cursor)++; /* skip '>' */
-            next_token->token.tag.markup.end = (*cursor);
+            next_token->tag.markup.end = (*cursor);
         }
     } else if ((__builtin_bswap32(tk) & MASK32_4) == XCLOSE) {
-        next_token->token.tag.markup.start = (*cursor);
+        next_token->tag.markup.start = (*cursor);
         (*cursor) += 2;
 
         uint64_t kind = *(uint64_t *)(html + (*cursor));
 
         TokenType tt = token_type(kind);
-        next_token->token.kind = tt.kind;
-        next_token->token.identifier = tt.identifier;
+        next_token->kind = tt.kind;
+        next_token->identifier = tt.identifier;
 
-        (*cursor) += strlen_u64(next_token->token.identifier);
+        (*cursor) += strlen_u64(next_token->identifier);
 
         int r = skip_whitespace(html, html_length, &(*cursor));
         if (r == 1) {
-            next_token->token.kind = TOKEN_END;
+            next_token->kind = TOKEN_END;
             return 1;
         }
 
         assert(html[(*cursor)] == '>');
 
-        next_token->token.tag.type = TAG_CLOSING;
+        next_token->tag.type = TAG_CLOSING;
         (*cursor)++; /* skip '>' */
-        next_token->token.tag.markup.end = (*cursor);
+        next_token->tag.markup.end = (*cursor);
     }
 
     return 0;
@@ -672,25 +678,58 @@ int ark_make_templates_array(TemplatesArray *templates_array, uint32_t *html_fil
         lexer.cursor = 0;
 
         while (lexer.cursor < lexer.file_content.length) {
-            NextToken nt = {0};
+            Token nt = {0};
 
-            get_token(&nt, lexer.file_content.data, lexer.file_content.length, &lexer.cursor, NULL);
+            get_token(&nt, lexer.file_content.data, lexer.file_content.length, &lexer.cursor);
 
-            switch (nt.token.kind) {
+            switch (nt.kind) {
                 case TOKEN_XDEF: {
-                    if (nt.token.tag.type == TAG_OPENING) {
-                        templates_array->names[templates_array->count].data = malloc((nt.name.length + 1) * sizeof(char));
-                        memcpy(templates_array->names[templates_array->count].data, nt.name.data, nt.name.length);
-                        templates_array->names[templates_array->count].data[nt.name.length] = '\0';
-                        templates_array->names[templates_array->count].length = nt.name.length;
+                    if (nt.tag.type == TAG_OPENING) {
+                        uint32_t attr_count = 0;
+                        tag_attr_count(&attr_count, nt.tag.attr_start, lexer.file_content.data, lexer.file_content.length);
+                        
+                        uint32_t *names_lengths = malloc(attr_count * sizeof(uint32_t));
+                        uint32_t *values_lengths = malloc(attr_count * sizeof(uint32_t));
+                        tag_attrs_lengths(names_lengths, values_lengths, attr_count, nt.tag.attr_start, lexer.file_content.data, lexer.file_content.length);
+                        
+                        AttrsArray attrs_array = {0};
+                        attrs_array.count = attr_count;
+                        attrs_array.attr = malloc(attr_count * sizeof(Attr));
 
-                        templates_array->components[templates_array->count].data = lexer.file_content.data + nt.token.tag.markup.end;
+                        uint32_t j;
+                        for (j = 0; j < attr_count; j++) {
+                            attrs_array.attr[j].name.data = malloc(names_lengths[j] * sizeof(char));
+                            attrs_array.attr[j].value.data = malloc(values_lengths[j] * sizeof(char));
+                        }
+
+                        free(names_lengths);
+                        free(values_lengths);
+
+                        get_tag_attrs(&attrs_array, nt.tag.attr_start, lexer.file_content.data, lexer.file_content.length);
+                        uint32_t name_attr_index = 0;
+                        locate_tag_name_attr(&name_attr_index, &attrs_array);
+                        
+                        String name = attrs_array.attr[name_attr_index].value;
+
+                        templates_array->names[templates_array->count].data = malloc((name.length + 1) * sizeof(char));
+                        memcpy(templates_array->names[templates_array->count].data, name.data, name.length);
+                        templates_array->names[templates_array->count].data[name.length] = '\0';
+                        templates_array->names[templates_array->count].length = name.length;
+
+                        templates_array->components[templates_array->count].data = lexer.file_content.data + nt.tag.markup.end;
+
+                        for (j = 0; j < attr_count; j++) {
+                            free(attrs_array.attr[j].name.data);
+                            free(attrs_array.attr[j].value.data);
+                        }
+                        free(attrs_array.attr);
+
                         break;
                     } 
                     
-                    if (nt.token.tag.type == TAG_CLOSING) {
+                    if (nt.tag.type == TAG_CLOSING) {
                         char *start = templates_array->components[templates_array->count].data;
-                        char *end = lexer.file_content.data + nt.token.tag.markup.start;
+                        char *end = lexer.file_content.data + nt.tag.markup.start;
 
                         templates_array->components[templates_array->count].length = end - start;
 
@@ -729,13 +768,13 @@ int ark_components_count(uint32_t *count, uint32_t *html_file_mask, char **array
         lexer.cursor = 0;
 
         while (lexer.cursor < lexer.file_content.length) {
-            NextToken nt = {0};
+            Token nt = {0};
 
-            get_token(&nt, lexer.file_content.data, lexer.file_content.length, &lexer.cursor, NULL);
+            get_token(&nt, lexer.file_content.data, lexer.file_content.length, &lexer.cursor);
 
-            switch (nt.token.kind) {
+            switch (nt.kind) {
                 case TOKEN_XDEF: {
-                    if (nt.token.tag.type == TAG_OPENING) {
+                    if (nt.tag.type == TAG_OPENING) {
                         *count += 1;
                     }
                     break;
@@ -768,15 +807,15 @@ int ark_make_html_file_mask(uint32_t *html_file_mask, char **array_of_filepaths,
 }
 
 /*
-- DONE: Error if x-slot, x-val are not self-closing.
-- DONE: Error if x-def, x-fill, x-for do not have a pair (open + closing) xtags.
+- Error if x-slot, x-val are not self-closing.
+- Error if x-def, x-fill, x-for do not have a pair (open + closing) xtags.
 
-- DONE: Error if x-def has a parent.
-- DONE: Error if x-fill has other parent than x-use.
-- DONE: Error if x-use has other child than x-fill.
+- Error if x-def has a parent.
+- Error if x-fill has other parent than x-use.
+- Error if x-use has other child than x-fill.
 
-- DONE: Error if any opening or self-closing xtag does not have a name attribute.
-- DONE: Error if any xtag except x-use opening or self-closing has more than the name attribute.
+- Error if any opening or self-closing xtag does not have a name attribute.
+- Error if any xtag except x-use opening or self-closing has more than the name attribute.
 
 - Error if recursive import.
 */
@@ -805,11 +844,11 @@ int ark_validate_templates(uint32_t *html_file_mask, char **array_of_filepaths, 
         boolean inside_xuse = false;
 
         while (lexer.cursor < lexer.file_content.length) {
-            NextToken nt = {0};
+            Token nt = {0};
 
-            get_token(&nt, lexer.file_content.data, lexer.file_content.length, &lexer.cursor, NULL);
+            get_token(&nt, lexer.file_content.data, lexer.file_content.length, &lexer.cursor);
 
-            switch (nt.token.kind) {
+            switch (nt.kind) {
                 case TOKEN_END: {
                     break;
                 }
@@ -820,7 +859,7 @@ int ark_validate_templates(uint32_t *html_file_mask, char **array_of_filepaths, 
                     break;
                 }
                 case TOKEN_XDEF: {
-                    if (nt.token.tag.type == TAG_OPENING) {
+                    if (nt.tag.type == TAG_OPENING) {
                         if (oc.xdef) {
                             assert(0);
                         }
@@ -830,27 +869,27 @@ int ark_validate_templates(uint32_t *html_file_mask, char **array_of_filepaths, 
                             inside_xuse = false;
                         }
                         oc.xdef += 1;
-                    } else if (nt.token.tag.type == TAG_CLOSING) {
+                    } else if (nt.tag.type == TAG_CLOSING) {
                         oc.xdef -= 1;
                     }
                     break;
                 }
                 case TOKEN_XUSE: {
-                    if (nt.token.tag.type == TAG_OPENING) {
+                    if (nt.tag.type == TAG_OPENING) {
                         oc.xuse += 1;
                         if (inside_xuse) {
                             assert(0);
                             /* Error: x-use can only have direct child x-fill */
                         }
                         inside_xuse = true;
-                    } else if (nt.token.tag.type == TAG_CLOSING) {
+                    } else if (nt.tag.type == TAG_CLOSING) {
                         oc.xuse -= 1;
                         inside_xuse = false;
                     }
                     break;
                 }
                 case TOKEN_XSLOT: {
-                    if (nt.token.tag.type != TAG_SELFCLOSING) {
+                    if (nt.tag.type != TAG_SELFCLOSING) {
                         /* print error! */
                         assert(0);
                     }
@@ -861,21 +900,21 @@ int ark_validate_templates(uint32_t *html_file_mask, char **array_of_filepaths, 
                     break;
                 }
                 case TOKEN_XFILL: {
-                    if (nt.token.tag.type == TAG_OPENING) {
+                    if (nt.tag.type == TAG_OPENING) {
                         oc.xfill += 1;
                         if (!inside_xuse) {
                             assert(0);
                             /* Error: x-fill must be first child of x-use */
                         }
                         inside_xuse = false;
-                    } else if (nt.token.tag.type == TAG_CLOSING) {
+                    } else if (nt.tag.type == TAG_CLOSING) {
                         oc.xfill -= 1;
                         inside_xuse = true;
                     }
                     break;
                 }
                 case TOKEN_XVAL: {
-                    if (nt.token.tag.type != TAG_SELFCLOSING) {
+                    if (nt.tag.type != TAG_SELFCLOSING) {
                         /* print error! */
                         assert(0);
                     }
@@ -886,14 +925,14 @@ int ark_validate_templates(uint32_t *html_file_mask, char **array_of_filepaths, 
                     break;
                 }
                 case TOKEN_XFOR: {
-                    if (nt.token.tag.type == TAG_OPENING) {
+                    if (nt.tag.type == TAG_OPENING) {
                         oc.xfor += 1;
                         if (inside_xuse) {
                             assert(0);
                             /* Error: x-use can only have direct child x-fill */
                             inside_xuse = false;
                         }
-                    } else if (nt.token.tag.type == TAG_CLOSING) {
+                    } else if (nt.tag.type == TAG_CLOSING) {
                         oc.xfor -= 1;
                     }
                     break;
@@ -933,7 +972,7 @@ int ark_compile_templates(ArkComponentArray *component_array, uint32_t *html_fil
     uint32_t component_count = 0;
     ark_components_count(&component_count, html_file_mask, array_of_filepaths, file_content_array, array_length);
 
-    Memory *memory = reserve_memory(PAGE_SIZE * 10);
+    Memory *memory = reserve_memory(PAGE_SIZE * 20);
 
     TemplatesArray templates_array = {0};
     templates_array.names = memory_alloc(memory, sizeof(String) * component_count);
@@ -968,30 +1007,56 @@ int ark_compile_templates(ArkComponentArray *component_array, uint32_t *html_fil
         uint32_t xfill_count = 0;
         
         AttrsArray attrs_array = {0};
+        boolean attrs_array_in_use = false;
+        uint32_t name_attr_index = 0;
         uint32_t attrs_rendered = 0;
 
         go_again:;
         boolean repeat = false;
         
         while (lexer.file_content.data[lexer.cursor]) {
-            NextToken nt = {0};
+            Token nt = {0};
 
-            AttrsArray tmp = {0};
-            get_token(&nt, lexer.file_content.data, lexer.file_content.length, &lexer.cursor, &tmp);            
-            if (nt.token.kind == TOKEN_XUSE && attrs_array.count == 0) {
-                /** TOOD: This not working */
-                attrs_array = tmp;
+            get_token(&nt, lexer.file_content.data, lexer.file_content.length, &lexer.cursor);
+
+            if (nt.kind == TOKEN_XUSE && nt.tag.type != TAG_CLOSING && !attrs_array_in_use) {
+                uint32_t attr_count = 0;
+                tag_attr_count(&attr_count, nt.tag.attr_start, lexer.file_content.data, lexer.file_content.length);
+                
+                uint32_t *names_lengths = malloc(attr_count * sizeof(uint32_t));
+                uint32_t *values_lengths = malloc(attr_count * sizeof(uint32_t));
+                tag_attrs_lengths(names_lengths, values_lengths, attr_count, nt.tag.attr_start, lexer.file_content.data, lexer.file_content.length);
+                
+                attrs_array.count = attr_count;
+                attrs_array.attr = malloc(attr_count * sizeof(Attr));
+    
+                uint32_t j;
+    
+                for (j = 0; j < attr_count; j++) {
+                    attrs_array.attr[j].name.data = malloc(names_lengths[j] * sizeof(char));
+                    attrs_array.attr[j].value.data = malloc(values_lengths[j] * sizeof(char));
+                }
+
+                free(names_lengths);
+                free(values_lengths);
+    
+                get_tag_attrs(&attrs_array, nt.tag.attr_start, lexer.file_content.data, lexer.file_content.length);
+                locate_tag_name_attr(&name_attr_index, &attrs_array);
+
+                if (attr_count > 1) {
+                    attrs_array_in_use = true;
+                }
             }
 
-            if (nt.token.kind == TOKEN_XUSE) {
+            if (nt.kind == TOKEN_XUSE) {
                 repeat = true;
             }
 
-            switch (nt.token.kind) {
+            switch (nt.kind) {
                 case TOKEN_PLACEHOLDER: {
                     String name = {0};
 
-                    char *p = lexer.file_content.data + nt.token.tag.markup.start;
+                    char *p = lexer.file_content.data + nt.tag.markup.start;
                     p += 2; /** skip "{{" */
                     uint32_t whitespace_count = 0;
                     skip_whitespace(p, 0, &whitespace_count);
@@ -1006,7 +1071,7 @@ int ark_compile_templates(ArkComponentArray *component_array, uint32_t *html_fil
                     uint32_t j;
                     for (j = 0; j < attrs_array.count; j++) {
                         if (strncmp(attrs_array.attr[j].name.data, name.data, name.length) == 0) {
-                            Range placeholder = nt.token.tag.markup;
+                            Range placeholder = nt.tag.markup;
                         
                             char *insert_location = lexer.file_content.data + placeholder.start;
                             
@@ -1039,7 +1104,10 @@ int ark_compile_templates(ArkComponentArray *component_array, uint32_t *html_fil
                                 attrs_array.attr = NULL;
                                 
                                 bzero(&attrs_array, sizeof(AttrsArray));
-                                attrs_rendered = 0;    
+                                attrs_rendered = 0;
+
+                                name_attr_index = 0;
+                                attrs_array_in_use = false;
                             }
 
                             break;
@@ -1058,15 +1126,16 @@ int ark_compile_templates(ArkComponentArray *component_array, uint32_t *html_fil
                     uint32_t j;
                     for (j = 0; j < component_count; j++) {
                         String name = templates_array.names[j];
+                        String attr_value = attrs_array.attr[name_attr_index].value;
                         
-                        if (strncmp(name.data, nt.name.data, nt.name.length) == 0 && name.length == nt.name.length) {
+                        if (strncmp(name.data, attr_value.data, attr_value.length) == 0 && name.length == attr_value.length) {
                             import = templates_array.components[j];
                             break;
                         }
                     }
                     
-                    if (nt.token.tag.type == TAG_SELFCLOSING) {                                                
-                        Range tag_markup = nt.token.tag.markup;
+                    if (nt.tag.type == TAG_SELFCLOSING) {                                                
+                        Range tag_markup = nt.tag.markup;
                         
                         saved_location = tag_markup.start;
 
@@ -1090,8 +1159,8 @@ int ark_compile_templates(ArkComponentArray *component_array, uint32_t *html_fil
                         lexer.cursor = tag_markup.start;
                     }
 
-                    if (nt.token.tag.type == TAG_OPENING) {
-                        Range opening_tag_markup = nt.token.tag.markup;
+                    if (nt.tag.type == TAG_OPENING) {
+                        Range opening_tag_markup = nt.tag.markup;
 
                         saved_location = opening_tag_markup.start;
                             
@@ -1103,8 +1172,8 @@ int ark_compile_templates(ArkComponentArray *component_array, uint32_t *html_fil
                         lexer.cursor = opening_tag_markup.start;
                     }
 
-                    if (nt.token.tag.type == TAG_CLOSING) {
-                        Range closing_tag_markup = nt.token.tag.markup;
+                    if (nt.tag.type == TAG_CLOSING) {
+                        Range closing_tag_markup = nt.tag.markup;
                         
                         char *insert_location = lexer.file_content.data + closing_tag_markup.start;
                         
@@ -1128,13 +1197,16 @@ int ark_compile_templates(ArkComponentArray *component_array, uint32_t *html_fil
                         bzero(&import, sizeof(String));
                         import_cursor = 0;
                         saved_location = 0;
+
+                        attrs_array_in_use = false;
                     }
+
                     break;
                 }
                 case TOKEN_XFILL: {
-                    if (nt.token.tag.type == TAG_OPENING) {
+                    if (nt.tag.type == TAG_OPENING) {
                         if (xfill_count == 0) {
-                            Range opening_tag_markup = nt.token.tag.markup;
+                            Range opening_tag_markup = nt.tag.markup;
                         
                             char *insert_location = lexer.file_content.data + opening_tag_markup.start;
                             
@@ -1165,11 +1237,11 @@ int ark_compile_templates(ArkComponentArray *component_array, uint32_t *html_fil
                         xfill_count++;
                     }
                     
-                    if (nt.token.tag.type == TAG_CLOSING) {
+                    if (nt.tag.type == TAG_CLOSING) {
                         xfill_count--;
 
                         if (xfill_count == 0) {
-                            Range closing_tag_markup = nt.token.tag.markup;
+                            Range closing_tag_markup = nt.tag.markup;
 
                             char *dest = lexer.file_content.data + closing_tag_markup.start;
                             char *src = lexer.file_content.data + closing_tag_markup.end;
