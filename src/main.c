@@ -33,7 +33,9 @@ typedef struct {
     int fd;
 } RequestCtx;
 
-ArkComponentArray component_array;
+char **component_name_arr;
+char **component_content_arr;
+uint32_t component_arr_length;
 
 void make_request(void *v) {
     ServerUri *server_uri = (ServerUri *)v;
@@ -126,11 +128,11 @@ int string_compare(char *str, char *str2, size_t str_length) {
     return 0;
 }
 
-int find_component(String *component, char *name) {
+int find_element_index(uint32_t *index, char **arr, char *str, uint32_t arr_length) {
     uint32_t i;
-    for (i = 0; i < component_array.count; i++) {
-        if (string_compare(component_array.names[i].data, name, component_array.names[i].length)) {
-            *component = component_array.components[i];
+    for (i = 0; i < arr_length; i++) {
+        if (string_compare(str, arr[i], strlen(arr[i]))) {
+            *index = i;
             return 0;
         }
     }
@@ -140,9 +142,11 @@ int find_component(String *component, char *name) {
 void not_found(void *v) {
     RequestCtx *request_ctx = (RequestCtx *)v;
 
-    String component = {0};
-    find_component(&component, "not_found");
-    assert(component.length);
+    uint32_t index = 0;
+    find_element_index(&index, component_name_arr, "not_found", component_arr_length);
+    char *component = component_content_arr[index];
+    uint32_t component_length = strlen(component);
+    assert(component_length);
 
     char response[KB(2)];
     bzero(response, KB(2));
@@ -151,7 +155,7 @@ void not_found(void *v) {
         "Content-Length: %d\r\n"
         "Content-Type: text/html\r\n\r\n"
         "%s",
-        component.length, component.data);
+        component_length, component);
     
     int response_length = strlen(response);
     ark_fd_write(request_ctx->fd, response, response_length);
@@ -237,7 +241,31 @@ int main() {
     
     ark_validate_templates(html_file_mask, array_of_filepaths, array_of_file_contents, num_of_filepaths);
     
-    ark_compile_templates(&component_array, html_file_mask, array_of_filepaths, array_of_file_contents, num_of_filepaths);
+    ark_templates_count(&component_arr_length, html_file_mask, array_of_filepaths, array_of_file_contents, num_of_filepaths);
+
+    uint32_t *names_lengths = memory_alloc(memory, component_arr_length * sizeof(uint32_t *));
+    uint32_t *templates_lengths = memory_alloc(memory, component_arr_length * sizeof(uint32_t *));
+    
+    ark_get_templates_info(names_lengths, templates_lengths, component_arr_length, html_file_mask, array_of_filepaths, array_of_file_contents, num_of_filepaths);
+    
+    component_name_arr = memory_alloc(memory, component_arr_length * sizeof(char *));
+    char **template_content_array = memory_alloc(memory, component_arr_length * sizeof(char *));
+    for (i = 0; i < component_arr_length; i++) {
+        component_name_arr[i] = memory_alloc(memory, names_lengths[i]);
+        template_content_array[i] = memory_alloc(memory, templates_lengths[i]);
+    }
+    
+    ark_make_templates_array(component_name_arr, template_content_array, component_arr_length, html_file_mask, array_of_filepaths, array_of_file_contents, num_of_filepaths);
+
+    uint32_t *compiled_templates_lengths = memory_alloc(memory, component_arr_length * sizeof(uint32_t *));
+    ark_get_compile_templates_lengths(compiled_templates_lengths, component_name_arr, template_content_array, component_arr_length);
+    
+    component_content_arr = memory_alloc(memory, component_arr_length * sizeof(char *));
+    for (i = 0; i < component_arr_length; i++) {
+        component_content_arr[i] = memory_alloc(memory, compiled_templates_lengths[i]);
+    }
+    
+    ark_compile_templates(component_content_arr, component_name_arr, template_content_array, component_arr_length);
     
     int fd;
     ark_setup_server(&fd, (uint16_t)8080);
