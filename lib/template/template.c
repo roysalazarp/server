@@ -77,19 +77,6 @@ typedef struct {
     uint8_t xfor;
 } OpenClose;
 
-typedef struct Template Template;
-struct Template {
-    Template *next;
-    String name;
-    String component;
-};
-
-typedef struct {
-    String *names;
-    String *components;
-    uint32_t count;
-} TemplatesArray;
-
 typedef enum {
     TOKEN_INVALID,
     TOKEN_XDEF,
