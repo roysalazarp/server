@@ -52,7 +52,8 @@
         "taskimpl.h": "c",
         "inttypes.h": "c",
         "fcntl.h": "c",
-        "stdlib.h": "c"
+        "stdlib.h": "c",
+        "compare": "c"
     },
     "C_Cpp.errorSquiggles": "enabled"
 }

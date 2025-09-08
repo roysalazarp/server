@@ -2,6 +2,7 @@
 #define ARK__H
 
 #include <stdio.h>
+#include <stdint.h>
 
 #define ARK_SHUT_SERVER_SIGNAL 2
 

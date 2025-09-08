@@ -5,10 +5,10 @@
             "name": "Debug",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/app/bin",
+            "program": "${workspaceFolder}/src/bin",
             "args": [],
             "stopAtEntry": false,
-            "cwd": "${workspaceFolder}/app/",
+            "cwd": "${workspaceFolder}/src/",
             "environment": [
                 {
                     "name": "LD_LIBRARY_PATH",
