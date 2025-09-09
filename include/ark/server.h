@@ -1,43 +1,10 @@
-#ifndef ARK__H
-#define ARK__H
+#ifndef ARK_SERVER_H
+#define ARK_SERVER_H
 
 #include <stdio.h>
 #include <stdint.h>
 
-#define ARK_SHUT_SERVER_SIGNAL 2
-
-typedef struct {
-    char *raw;
-    size_t length;
-    uint32_t handle;
-    int fd;
-} ArkRequest;
-
-typedef struct {
-    char *domain_name;
-    size_t domain_name_length;
-    char *request;
-    size_t request_length;
-    uint16_t port;
-} ArkFetchTaskDetails;
-
-typedef struct {
-    uint8_t *buffer;
-    size_t buffer_size;
-    size_t received_bytes;
-    boolean headers_checked;
-} RawHTTPMessage;
-
-typedef struct {
-    RawHTTPMessage *responses;
-    uint32_t count;
-} ArkFetchResponse;
-
-int ark_server_init(uint16_t port);
 int ark_setup_server(int *fd, uint16_t port);
 int ark_client_accept(int *client_fd, int fd);
-int ark_retrive_request_old(ArkRequest *ark_request);
-int ark_fetch(ArkFetchResponse *response, uint32_t handle, ArkFetchTaskDetails *tasks, uint32_t tasks_count);
-int ark_send_response(uint32_t handle, char *response, size_t response_length);
 
-#endif /* ARK__H */
+#endif /* ARK_SERVER_H */

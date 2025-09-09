@@ -1,5 +1,5 @@
-#ifndef TEMPLATE_H
-#define TEMPLATE_H
+#ifndef ARK_TEMPLATE_H
+#define ARK_TEMPLATE_H
 
 #include <stdio.h>
 #include "shared.h"
@@ -12,5 +12,5 @@ int ark_compile_templates(char **compiled_template_content_array, char **templat
 int ark_get_templates_info(uint32_t *names_lengths, uint32_t *templates_lengths, uint32_t template_count, uint32_t *html_file_mask, char **array_of_filepaths, char **file_content_array, uint32_t array_length);
 int ark_make_templates_array(char **template_name_array, char **template_content_array, uint32_t template_count, uint32_t *html_file_mask, char **array_of_filepaths, char **file_content_array, uint32_t array_length);
 
-#endif /* TEMPLATE_H */
+#endif /* ARK_TEMPLATE_H */
 

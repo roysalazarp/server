@@ -1,5 +1,5 @@
-#ifndef UTILS_H
-#define UTILS_H
+#ifndef ARK_UTILS_H
+#define ARK_UTILS_H
 
 #include <stdio.h>
 
@@ -10,4 +10,4 @@ int ark_count_files(uint32_t *num_of_filepaths, char *root_path);
 int ark_list_files(char **array_of_filepaths, uint32_t num_of_filepaths, char *base_path);
 size_t ark_get_file_size(char *filepath);
 
-#endif /* UTILS_H */
+#endif /* ARK_UTILS_H */

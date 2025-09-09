@@ -1,5 +1,5 @@
-#ifndef SHARED_H
-#define SHARED_H
+#ifndef ARK_SHARED_H
+#define ARK_SHARED_H
 
 #include <stdint.h>
 
@@ -43,4 +43,4 @@ typedef struct {
 #define TURN_OFF_U32_BIT(mask, i)    (mask[MASK_INDEX(i)] &= ~(1U << BIT_POSITION(i)))
 #define TURN_ON_U32_BIT(mask, i)     (mask[MASK_INDEX(i)] |=  (1U << BIT_POSITION(i)))
 
-#endif /* SHARED_H */
+#endif /* ARK_SHARED_H */

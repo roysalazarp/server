@@ -53,7 +53,8 @@
         "inttypes.h": "c",
         "fcntl.h": "c",
         "stdlib.h": "c",
-        "compare": "c"
+        "compare": "c",
+        "errno.h": "c"
     },
     "C_Cpp.errorSquiggles": "enabled"
 }

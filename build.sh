@@ -3,57 +3,74 @@
 # Exit immediately on error
 set -e
 
-# Compiler and flags
+# Compiler
 CC=gcc
-CFLAGS="-g -DDEBUG=1 -Wall -Wextra -Werror -pedantic -Wno-unused-parameter -Wno-unused-but-set-variable -Wno-declaration-after-statement -Wno-unused-variable -Wno-long-long -Wno-missing-field-initializers -Wno-implicit-function-declaration -Wno-unused-function -Wno-uninitialized"
 
-# Create output directories if they don't exist
-mkdir -p build/ArkSDK/include/ark build/ArkSDK/lib
+# Flags
+DEV_CFLAGS="-g -DDEBUG=1 -Wall -Wextra -Werror -pedantic \
+    -Wno-unused-parameter -Wno-unused-but-set-variable \
+    -Wno-declaration-after-statement -Wno-unused-variable \
+    -Wno-long-long -Wno-missing-field-initializers \
+    -Wno-implicit-function-declaration -Wno-unused-function \
+    -Wno-uninitialized"
 
-echo "🔧 Compiling dynamic libraries..."
+PROD_CFLAGS="-O2 -Wall -Wextra -Werror -pedantic \
+    -Wno-unused-parameter -Wno-unused-but-set-variable \
+    -Wno-declaration-after-statement -Wno-unused-variable \
+    -Wno-long-long -Wno-missing-field-initializers \
+    -Wno-implicit-function-declaration -Wno-unused-function \
+    -Wno-uninitialized"
 
-# JSON module
-$CC $CFLAGS -fPIC -shared lib/json/json.c -o build/ArkSDK/lib/libark_json.so
+# Build function
+build_env() {
+    ENV_DIR=$1
+    CFLAGS=$2
 
-# HTTP module
-$CC $CFLAGS -fPIC -shared lib/http/http.c -o build/ArkSDK/lib/libark_http.so
+    echo "📂 Building $ENV_DIR environment..."
 
-# Memory module
-$CC $CFLAGS -fPIC -shared lib/memory/memory.c -o build/ArkSDK/lib/libark_memory.so
+    INCLUDE_DIR=$ENV_DIR/ArkSDK/include/ark
+    LIB_DIR=$ENV_DIR/ArkSDK/lib
+    ASSETS_DIR=$ENV_DIR/assets
 
-# Template module
-$CC $CFLAGS -fPIC -shared lib/template/template.c -o build/ArkSDK/lib/libark_template.so
+    mkdir -p "$INCLUDE_DIR" "$LIB_DIR" "$ASSETS_DIR"
 
-# Server module
-$CC $CFLAGS -fPIC -shared lib/server/server.c -o build/ArkSDK/lib/libark_server.so
+    echo "🔧 Compiling dynamic libraries for $ENV_DIR..."
 
-# Profiler module
-$CC $CFLAGS -fPIC -shared lib/profiler/profiler.c -o build/ArkSDK/lib/libark_profiler.so
+    $CC $CFLAGS -fPIC -shared lib/json/json.c -o $LIB_DIR/libark_json.so
+    $CC $CFLAGS -fPIC -shared lib/http/http.c -o $LIB_DIR/libark_http.so
+    $CC $CFLAGS -fPIC -shared lib/memory/memory.c -o $LIB_DIR/libark_memory.so
+    $CC $CFLAGS -fPIC -shared lib/template/template.c -o $LIB_DIR/libark_template.so
+    $CC $CFLAGS -fPIC -shared lib/server/server.c -o $LIB_DIR/libark_server.so
+    $CC $CFLAGS -fPIC -shared lib/profiler/profiler.c -o $LIB_DIR/libark_profiler.so
+    $CC $CFLAGS -fPIC -shared lib/utils/utils.c -o $LIB_DIR/libark_utils.so
 
-# Utils module
-$CC $CFLAGS -fPIC -shared lib/utils/utils.c -o build/ArkSDK/lib/libark_utils.so
+    $CC $CFLAGS -fPIC -shared \
+        lib/task/asm.S \
+        lib/task/channel.c \
+        lib/task/context.c \
+        lib/task/fd.c \
+        lib/task/net.c \
+        lib/task/print.c \
+        lib/task/qlock.c \
+        lib/task/rendez.c \
+        lib/task/task.c \
+        -o $LIB_DIR/libark_task.so
 
-# Task module
-$CC $CFLAGS -fPIC -shared \
-    lib/task/asm.S \
-    lib/task/channel.c \
-    lib/task/context.c \
-    lib/task/fd.c \
-    lib/task/net.c \
-    lib/task/print.c \
-    lib/task/qlock.c \
-    lib/task/rendez.c \
-    lib/task/task.c \
-    -o build/ArkSDK/lib/libark_task.so
+    echo "📦 Packaging headers and assets for $ENV_DIR..."
+    cp include/ark/*.h "$INCLUDE_DIR/"
+    cp -r src/assets/* "$ASSETS_DIR/"
 
-echo "📦 Packaging..."
+    echo "🚀 Building main program for $ENV_DIR..."
+    SRC_FILES=$(find ./src -name "*.c")
+    $CC $CFLAGS $SRC_FILES -I$ENV_DIR/ArkSDK/include \
+        -L$LIB_DIR -lark_server -lark_memory -lark_http -lark_utils -lark_template -lark_task \
+        -o $ENV_DIR/tilastorage
 
-# Copy public headers to SDK include folder
-cp include/ark/*.h build/ArkSDK/include/ark/
-cp -r src/assets/* build/assets
+    echo "✅ $ENV_DIR build complete!"
+}
 
-echo "✅ Build and packaging complete!"
+# Run both builds
+build_env build "$PROD_CFLAGS"
+build_env dev "$DEV_CFLAGS"
 
-SRC_FILES=$(find ./src -name "*.c")
-$CC $CFLAGS $SRC_FILES -I./build/ArkSDK/include \
-    -L./build/ArkSDK/lib -lark_server -lark_memory -lark_http -lark_utils -lark_template -lark_task -o ./build/tilastorage
+echo "🎉 All builds done!"

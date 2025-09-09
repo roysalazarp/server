@@ -1,5 +1,5 @@
-#ifndef HTTP_INTERNAL_H
-#define HTTP_INTERNAL_H
+#ifndef ARK_HTTP_INTERNAL_H
+#define ARK_HTTP_INTERNAL_H
 
 #include <stdint.h>
 #include <unistd.h>
@@ -54,4 +54,4 @@
 
 int ark_parse_http_request_message(ARKHttpMessage *http_msg, char *raw_http_msg, size_t raw_http_msg_length);
 
-#endif /* HTTP_INTERNAL_H */
+#endif /* ARK_HTTP_INTERNAL_H */
