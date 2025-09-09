@@ -139,6 +139,31 @@ int find_element_index(uint32_t *index, char **arr, char *str, uint32_t arr_leng
     return -1;
 }
 
+void home(void *v) {
+    RequestCtx *request_ctx = (RequestCtx *)v;
+
+    uint32_t index = 0;
+    find_element_index(&index, component_name_arr, "home", component_arr_length);
+    char *component = component_content_arr[index];
+    uint32_t component_length = strlen(component);
+    assert(component_length);
+
+    char response[KB(2)];
+    bzero(response, KB(2));
+    sprintf(response,
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Length: %d\r\n"
+        "Content-Type: text/html\r\n\r\n"
+        "%s",
+        component_length, component);
+    
+    int response_length = strlen(response);
+    ark_fd_write(request_ctx->fd, response, response_length);
+    
+    close(request_ctx->fd);
+    memory_free(request_ctx->memory);
+}
+
 void not_found(void *v) {
     RequestCtx *request_ctx = (RequestCtx *)v;
 
@@ -187,10 +212,16 @@ void handler(void *arg) {
         char *uri = request + http_msg.uri.start_offset;
         size_t uri_length = http_msg.uri.end_offset - http_msg.uri.start_offset;
         
-        if (strncmp(uri, "/a", uri_length) == 0 && uri_length == strlen("/a")) {
-            ark_task_create(get_a, request_ctx, KB(8));
-        } else if (strncmp(uri, "/b", uri_length) == 0 && uri_length == strlen("/b")) {
-            ark_task_create(get_b, request_ctx, KB(8));
+        // if (strncmp(uri, "/a", uri_length) == 0 && uri_length == strlen("/a")) {
+        //     ark_task_create(get_a, request_ctx, KB(8));
+        // } else if (strncmp(uri, "/b", uri_length) == 0 && uri_length == strlen("/b")) {
+        //     ark_task_create(get_b, request_ctx, KB(8));
+        // } else {
+        //     ark_task_create(not_found, request_ctx, KB(8));
+        // }
+
+        if (strncmp(uri, "/", uri_length) == 0 && uri_length == strlen("/")) {
+            ark_task_create(home, request_ctx, KB(8));
         } else {
             ark_task_create(not_found, request_ctx, KB(8));
         }

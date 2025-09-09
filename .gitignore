@@ -1,4 +1,3 @@
-ArkSDK
+build
 test/*
 !test/*.c
-bin

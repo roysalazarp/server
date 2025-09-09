@@ -5,14 +5,14 @@
             "name": "Debug",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/src/bin",
+            "program": "${workspaceFolder}/build/tilastorage",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}/src/",
             "environment": [
                 {
                     "name": "LD_LIBRARY_PATH",
-                    "value": "${workspaceFolder}/ArkSDK/lib"
+                    "value": "${workspaceFolder}/build/ArkSDK/lib"
                 }
             ],
             "externalConsole": false,
