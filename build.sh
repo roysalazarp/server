@@ -43,7 +43,9 @@ build_env() {
         lib/http/khttprepeatable.c \
         lib/http/khttptoken.c \
         lib/http/ktolower.c \
+        lib/http/khextoint.c \
         lib/http/parsehttpmessage.c \
+        lib/http/parseurl.c \
         -o $LIB_DIR/libark_http.so
     
     $CC $CFLAGS -fPIC -shared lib/memory/memory.c -o $LIB_DIR/libark_memory.so

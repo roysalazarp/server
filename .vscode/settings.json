@@ -59,7 +59,8 @@
         "limits.h": "c",
         "stdbool.h": "c",
         "serialize.h": "c",
-        "*.inc": "c"
+        "*.inc": "c",
+        "tab.h": "c"
     },
     "C_Cpp.errorSquiggles": "enabled"
 }

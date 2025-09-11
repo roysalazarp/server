@@ -10,12 +10,21 @@
 #include "ark/shared.h"
 #include "ark/server.h"
 #include "ark/memory.h"
+#include "ark/url.h"
 #include "ark/http.h"
 #include "ark/template.h"
 #include "ark/utils.h"
 #include "ark/task.h"
 
 #define PORT 8081
+
+typedef enum {
+    ERR_MIN_PASSWORD_LENGTH,
+} UserErrorCodes;
+
+char *error_messages[] = {
+    [ERR_MIN_PASSWORD_LENGTH] = "Password should be at least 4 characters",
+};
 
 #define ARK_MAX_HTTP_REQUEST_SIZE MB(300)
 #define ARK_MAX_QUEUED_HTTP_REQUESTS 500
@@ -50,6 +59,15 @@ char **component_content_arr;
 uint32_t component_arr_length;
 
 sqlite3 *db;
+
+int check_password(char *errors[1], uint32_t *errors_count, char *password, uint32_t password_length) {
+    if (password_length < 10) {
+        errors[*errors_count] = error_messages[ERR_MIN_PASSWORD_LENGTH];
+        *errors_count += 1;
+    }
+
+    return 0;
+}
 
 void make_request(void *v) {
     ServerUri *server_uri = (ServerUri *)v;
@@ -180,11 +198,15 @@ void home(void *v) {
 
 void signup_create_account(void *v) {
     RequestCtx *request_ctx = (RequestCtx *)v;
+    char *request = request_ctx->request;
+    struct HttpMessage *msg = request_ctx->msg;
 
-    // struct Url url;
+    struct UrlParams h;
+    ParseParams(request + msg->i, -1, &h);
 
-    // struct HttpMessage *msg = request_ctx->msg;
-    // ParseUrl(request_ctx->request + msg->uri.a, msg->uri.b - msg->uri.a, &url, kUrlPlus | kUrlLatin1);
+    char *errors[1] = {0};
+    uint32_t errors_count = 0;
+    check_password(errors, &errors_count, h.p[1].val.p, h.p[1].val.n);
 
     char response[KB(4)];
     bzero(response, KB(4));
