@@ -60,7 +60,9 @@
         "stdbool.h": "c",
         "serialize.h": "c",
         "*.inc": "c",
-        "tab.h": "c"
+        "tab.h": "c",
+        "deque": "c",
+        "unordered_map": "c"
     },
     "C_Cpp.errorSquiggles": "enabled"
 }

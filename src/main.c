@@ -20,11 +20,16 @@
 
 typedef enum {
     ERR_MIN_PASSWORD_LENGTH,
+    ERR_INVALID_EMAIL,
 } UserErrorCodes;
 
 char *error_messages[] = {
     [ERR_MIN_PASSWORD_LENGTH] = "Password should be at least 4 characters",
+    [ERR_INVALID_EMAIL] = "Invalid email format",
 };
+
+#define IS_ASCII_LETTER(c) (((c) >= 'A' && (c) <= 'Z') || ((c) >= 'a' && (c) <= 'z'))
+#define IS_EMAIL_TOKEN(c)  ((IS_ASCII_LETTER(c)) || ((c) == '-') || ((c) == '_') || ((c) == '+'))
 
 #define ARK_MAX_HTTP_REQUEST_SIZE MB(300)
 #define ARK_MAX_QUEUED_HTTP_REQUESTS 500
@@ -63,6 +68,137 @@ sqlite3 *db;
 int check_password(char *errors[1], uint32_t *errors_count, char *password, uint32_t password_length) {
     if (password_length < 10) {
         errors[*errors_count] = error_messages[ERR_MIN_PASSWORD_LENGTH];
+        *errors_count += 1;
+    }
+
+    return 0;
+}
+
+#define EMAIL_START 0
+#define EMAIL_USERNAME 1
+#define EMAIL_MAIL_SERVER 2
+#define EMAIL_DOMAIN 3
+
+typedef struct {
+    struct {
+        uint32_t start;
+        uint32_t end;
+    } username;
+    struct {
+        uint32_t start;
+        uint32_t end;
+    } mail_server;
+    struct {
+        uint32_t start;
+        uint32_t end;
+    } domain;
+} Email;
+
+int parse_email(Email *e, char *email, uint32_t email_length) {
+    uint32_t cursor = 0;
+    int ch;
+
+    int start;
+    
+    uint32_t t = 0;
+    for (; cursor < email_length;) {
+        ch = email[cursor];
+        switch (t) {
+            case EMAIL_START: {
+                for (;;) {
+                    if (IS_EMAIL_TOKEN(ch)) {
+                        start = cursor;
+                        t = EMAIL_USERNAME;
+                        break;
+                    }
+                    if (ch != ' ') {
+                        return -1;
+                    }
+                    if (++cursor == email_length) {
+                        break;
+                    }
+                    ch = email[cursor];
+                }
+                break;
+            }
+            case EMAIL_USERNAME: {
+                for (;;) {
+                    if (ch == '@') {
+                        e->username.start = start;
+                        e->username.end = cursor - 1;
+                        
+                        if (!IS_ASCII_LETTER(email[e->username.start]) || !IS_ASCII_LETTER(email[e->username.end])) {
+                            return -1;
+                        }
+
+                        cursor += 1; /* skip @ */
+                        start = cursor;
+                        t = EMAIL_MAIL_SERVER;
+                        break;
+                    }
+                    if (!IS_EMAIL_TOKEN(ch)) {
+                        return -1;
+                    }
+                    if (++cursor == email_length) {
+                        break;
+                    }
+                    ch = email[cursor];
+                }
+                break;
+            }
+            case EMAIL_MAIL_SERVER: {
+                for (;;) {
+                    if (ch == '.') {
+                        e->mail_server.start = start;
+                        e->mail_server.end = cursor - 1;
+
+                        if (!IS_ASCII_LETTER(email[e->mail_server.start]) || !IS_ASCII_LETTER(email[e->mail_server.end])) {
+                            return -1;
+                        }
+                        
+                        cursor += 1; /* skip . */
+                        start = cursor;
+                        t = EMAIL_DOMAIN;
+                        break;
+                    }
+                    if (!IS_EMAIL_TOKEN(ch)) {
+                        return -1;
+                    }
+                    if (++cursor == email_length) {
+                        break;
+                    }
+                    ch = email[cursor];
+                }
+                break;
+            }
+            case EMAIL_DOMAIN: {
+                for (;;) {
+                    if (!IS_ASCII_LETTER(ch)) {
+                        return -1;
+                    }
+                    if (++cursor == email_length) {
+                        e->domain.start = start;
+                        e->domain.end = cursor - 1;
+                        
+                        break;
+                    }
+                    ch = email[cursor];
+                }
+                break;
+            }
+            default: {
+                break;
+            }
+        }
+    }
+
+    return 0;
+}
+
+int check_email(char *errors[1], uint32_t *errors_count, char *email, uint32_t email_length) {
+    Email e = {0};
+    if (parse_email(&e, email, email_length) == -1) {
+        errors[*errors_count] = error_messages[ERR_INVALID_EMAIL];
         *errors_count += 1;
     }
 
@@ -207,6 +343,10 @@ void signup_create_account(void *v) {
     char *errors[1] = {0};
     uint32_t errors_count = 0;
     check_password(errors, &errors_count, h.p[1].val.p, h.p[1].val.n);
+
+    memset(errors, 0, sizeof(errors));
+    errors_count = 0;
+    check_email(errors, &errors_count, h.p[0].val.p, h.p[0].val.n);
 
     char response[KB(4)];
     bzero(response, KB(4));
