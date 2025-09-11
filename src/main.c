@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <sqlite3.h>
+#include <argon2.h>
 
 #include "ark/shared.h"
 #include "ark/server.h"
@@ -38,6 +39,10 @@ char *error_messages[] = {
 
 #define PAGE_SIZE KB(4)
 #define MAX_REQUEST_MSG_SIZE KB(2)
+
+#define HASH_LENGTH 32
+#define SALT_LENGTH 16
+#define PASSWORD_BUFFER 255
 
 #define UrlEqual(S) \
   SlicesEqual(request + msg->uri.a, msg->uri.b - msg->uri.a, S, strlen(S))
@@ -205,6 +210,18 @@ int check_email(char *errors[1], uint32_t *errors_count, char *email, uint32_t e
     return 0;
 }
 
+int generate_salt(void *salt, size_t salt_size) {
+    FILE *dev_urandom = fopen("/dev/urandom", "rb");
+
+    if (fread(salt, 1, salt_size, dev_urandom) != salt_size) {
+        fclose(dev_urandom);
+        return -1;
+    }
+
+    fclose(dev_urandom);
+    return 0;
+}
+
 void make_request(void *v) {
     ServerUri *server_uri = (ServerUri *)v;
 
@@ -342,11 +359,42 @@ void signup_create_account(void *v) {
 
     char *errors[1] = {0};
     uint32_t errors_count = 0;
-    check_password(errors, &errors_count, h.p[1].val.p, h.p[1].val.n);
-
+    check_email(errors, &errors_count, h.p[0].val.p, h.p[0].val.n);
+    
     memset(errors, 0, sizeof(errors));
     errors_count = 0;
-    check_email(errors, &errors_count, h.p[0].val.p, h.p[0].val.n);
+    char *password = h.p[1].val.p;
+    uint32_t password_length = h.p[1].val.n;
+    check_password(errors, &errors_count, h.p[1].val.p, h.p[1].val.n);
+
+    uint8_t salt[SALT_LENGTH];
+    memset(salt, 0, SALT_LENGTH);
+
+    assert(generate_salt(salt, SALT_LENGTH) != -1);
+
+    uint32_t t_cost = 2;
+    uint32_t m_cost = (1 << 16);
+    uint32_t parallelism = 1;
+
+    uint8_t hash[HASH_LENGTH];
+    memset(hash, 0, HASH_LENGTH);
+
+    char hashed_password[PASSWORD_BUFFER];
+    memset(hashed_password, 0, PASSWORD_BUFFER);
+    if (argon2i_hash_raw(t_cost, m_cost, parallelism, password, password_length, salt, SALT_LENGTH, hash, HASH_LENGTH) != ARGON2_OK) {
+        printf("Failed to create hash from password\n");
+        assert(0);
+    }
+
+    if (argon2i_hash_encoded(t_cost, m_cost, parallelism, password, password_length, salt, SALT_LENGTH, HASH_LENGTH, hashed_password, PASSWORD_BUFFER) != ARGON2_OK) {
+        printf("Failed to encode hash\n");
+        assert(0);
+    }
+
+    if (argon2i_verify(hashed_password, password, password_length) != ARGON2_OK) {
+        printf("Failed to verify password\n");
+        assert(0);
+    }
 
     char response[KB(4)];
     bzero(response, KB(4));
