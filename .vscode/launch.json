@@ -5,7 +5,7 @@
             "name": "Debug",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/dev/bin/tilastorage",
+            "program": "${workspaceFolder}/dev/tilastorage",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}/src/",

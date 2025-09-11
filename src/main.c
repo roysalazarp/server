@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <sqlite3.h>
 
 #include "ark/shared.h"
 #include "ark/server.h"
@@ -14,6 +15,8 @@
 #include "ark/utils.h"
 #include "ark/task.h"
 
+#define PORT 8081
+
 #define ARK_MAX_HTTP_REQUEST_SIZE MB(300)
 #define ARK_MAX_QUEUED_HTTP_REQUESTS 500
 
@@ -21,6 +24,13 @@
 
 #define PAGE_SIZE KB(4)
 #define MAX_REQUEST_MSG_SIZE KB(2)
+
+#define UrlEqual(S) \
+  SlicesEqual(request + msg->uri.a, msg->uri.b - msg->uri.a, S, strlen(S))
+
+#define UrlStartsWith(S)                   \
+  (msg->uri.b - msg->uri.a >= strlen(S) && \
+   !memcmp(request + msg->uri.a, S, strlen(S)))
 
 typedef struct {
     char server[20];
@@ -31,11 +41,15 @@ typedef struct {
 typedef struct {
     Memory *memory;
     int fd;
+    struct HttpMessage *msg;
+    char *request;
 } RequestCtx;
 
 char **component_name_arr;
 char **component_content_arr;
 uint32_t component_arr_length;
+
+sqlite3 *db;
 
 void make_request(void *v) {
     ServerUri *server_uri = (ServerUri *)v;
@@ -164,6 +178,50 @@ void home(void *v) {
     memory_free(request_ctx->memory);
 }
 
+void signup_create_account(void *v) {
+    RequestCtx *request_ctx = (RequestCtx *)v;
+
+    // struct Url url;
+
+    // struct HttpMessage *msg = request_ctx->msg;
+    // ParseUrl(request_ctx->request + msg->uri.a, msg->uri.b - msg->uri.a, &url, kUrlPlus | kUrlLatin1);
+
+    char response[KB(4)];
+    bzero(response, KB(4));
+    sprintf(response, "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
+    
+    int response_length = strlen(response);
+    ark_fd_write(request_ctx->fd, response, response_length);
+    
+    close(request_ctx->fd);
+    memory_free(request_ctx->memory);
+}
+
+void signup(void *v) {
+    RequestCtx *request_ctx = (RequestCtx *)v;
+
+    uint32_t index = 0;
+    find_element_index(&index, component_name_arr, "signup", component_arr_length);
+    char *component = component_content_arr[index];
+    uint32_t component_length = strlen(component);
+    assert(component_length);
+
+    char response[KB(4)];
+    bzero(response, KB(4));
+    sprintf(response,
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Length: %d\r\n"
+        "Content-Type: text/html\r\n\r\n"
+        "%s",
+        component_length, component);
+    
+    int response_length = strlen(response);
+    ark_fd_write(request_ctx->fd, response, response_length);
+    
+    close(request_ctx->fd);
+    memory_free(request_ctx->memory);
+}
+
 void not_found(void *v) {
     RequestCtx *request_ctx = (RequestCtx *)v;
 
@@ -203,15 +261,39 @@ void handler(void *arg) {
         ark_fd_await(request_ctx->fd, 'r');
 
         char *request = memory_alloc(memory, sizeof(char) * MAX_REQUEST_MSG_SIZE);
+        request_ctx->request = request;
         ark_fd_read(request_ctx->fd, request, MAX_REQUEST_MSG_SIZE);
         size_t request_length = strlen(request);
 
-        ARKHttpMessage http_msg = {0};
-        ark_parse_http_request_message(&http_msg, request, request_length);
+        int inmsglen;
+        ssize_t got;
 
-        char *uri = request + http_msg.uri.start_offset;
-        size_t uri_length = http_msg.uri.end_offset - http_msg.uri.start_offset;
+        struct HttpMessage *msg = memory_alloc(memory, sizeof(struct HttpMessage));
+        request_ctx->msg = msg;
+
+        InitHttpMessage(msg, kHttpRequest);
         
+        if ((inmsglen = ParseHttpMessage(msg, request, request_length, request_length)) <= 0) {
+            if (!inmsglen) {
+                printf("client sent fragmented message\n");
+            } else {
+                printf("client sent bad message\n");
+            }
+            break;
+        }
+
+        printf("\n");
+        
+        if (UrlEqual("/")) {
+            ark_task_create(home, request_ctx, KB(8));
+        } else if (UrlEqual("/signup")) {
+            ark_task_create(signup, request_ctx, KB(16));
+        } else if (UrlStartsWith("/signup/create-account")) {
+            ark_task_create(signup_create_account, request_ctx, KB(16));
+        } else {
+            ark_task_create(not_found, request_ctx, KB(8));
+        }
+
         // if (strncmp(uri, "/a", uri_length) == 0 && uri_length == strlen("/a")) {
         //     ark_task_create(get_a, request_ctx, KB(8));
         // } else if (strncmp(uri, "/b", uri_length) == 0 && uri_length == strlen("/b")) {
@@ -220,16 +302,34 @@ void handler(void *arg) {
         //     ark_task_create(not_found, request_ctx, KB(8));
         // }
 
-        if (strncmp(uri, "/", uri_length) == 0 && uri_length == strlen("/")) {
-            ark_task_create(home, request_ctx, KB(8));
-        } else {
-            ark_task_create(not_found, request_ctx, KB(8));
-        }
     }
 }
 
 int main() {
     setbuf(stdout, NULL);
+
+    if (sqlite3_open("/workspaces/server/dev.sqlite", &db) != SQLITE_OK) {
+        fprintf(stderr, "Cannot open DB: %s\n", sqlite3_errmsg(db));
+        assert(0);
+    }
+
+    const char *sql = "SELECT id, email, created_at FROM users;";
+    sqlite3_stmt *stmt = NULL;
+
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) {
+        fprintf(stderr, "Failed to prepare: %s\n", sqlite3_errmsg(db));
+        assert(0);
+    }
+
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        int id = sqlite3_column_int(stmt, 0);
+        const unsigned char *email = sqlite3_column_text(stmt, 1);
+        const unsigned char *created = sqlite3_column_text(stmt, 2);
+
+        printf("id=%d, email=%s, created_at=%s\n", id, email, created);
+    }
+
+    sqlite3_finalize(stmt);
 
     uint32_t i;
     
@@ -299,10 +399,14 @@ int main() {
     ark_compile_templates(component_content_arr, component_name_arr, template_content_array, component_arr_length);
     
     int fd;
-    ark_setup_server(&fd, (uint16_t)8080);
+    ark_setup_server(&fd, PORT);
 
     ark_task_create(handler, &fd, KB(8)); /** NOTE: Keep an eye that the stack size does not become a problem */
 	ark_task_run_scheduler();
     
+    /** NOTE: Code bellow will never run */
+    
+    sqlite3_close(db);
+
     return 0;
 }

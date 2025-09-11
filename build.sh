@@ -7,19 +7,19 @@ set -e
 CC=gcc
 
 # Flags
-DEV_CFLAGS="-g -DDEBUG=1 -Wall -Wextra -Werror -pedantic \
+DEV_CFLAGS="-g -DDEBUG=1 -Wall -Wextra -Werror \
     -Wno-unused-parameter -Wno-unused-but-set-variable \
     -Wno-declaration-after-statement -Wno-unused-variable \
     -Wno-long-long -Wno-missing-field-initializers \
     -Wno-implicit-function-declaration -Wno-unused-function \
-    -Wno-uninitialized"
+    -Wno-uninitialized -Wno-sign-compare"
 
-PROD_CFLAGS="-O2 -Wall -Wextra -Werror -pedantic \
+PROD_CFLAGS="-O2 -Wall -Wextra -Werror \
     -Wno-unused-parameter -Wno-unused-but-set-variable \
     -Wno-declaration-after-statement -Wno-unused-variable \
     -Wno-long-long -Wno-missing-field-initializers \
     -Wno-implicit-function-declaration -Wno-unused-function \
-    -Wno-uninitialized"
+    -Wno-uninitialized -Wno-sign-compare"
 
 # Build function
 build_env() {
@@ -37,7 +37,15 @@ build_env() {
     echo "🔧 Compiling dynamic libraries for $ENV_DIR..."
 
     $CC $CFLAGS -fPIC -shared lib/json/json.c -o $LIB_DIR/libark_json.so
-    $CC $CFLAGS -fPIC -shared lib/http/http.c -o $LIB_DIR/libark_http.so
+    
+    $CC $CFLAGS -fPIC -shared \
+        lib/http/gethttpheader.c \
+        lib/http/khttprepeatable.c \
+        lib/http/khttptoken.c \
+        lib/http/ktolower.c \
+        lib/http/parsehttpmessage.c \
+        -o $LIB_DIR/libark_http.so
+    
     $CC $CFLAGS -fPIC -shared lib/memory/memory.c -o $LIB_DIR/libark_memory.so
     $CC $CFLAGS -fPIC -shared lib/template/template.c -o $LIB_DIR/libark_template.so
     $CC $CFLAGS -fPIC -shared lib/server/server.c -o $LIB_DIR/libark_server.so
@@ -63,7 +71,7 @@ build_env() {
     echo "🚀 Building main program for $ENV_DIR..."
     SRC_FILES=$(find ./src -name "*.c")
     $CC $CFLAGS $SRC_FILES -I$ENV_DIR/ArkSDK/include \
-        -L$LIB_DIR -lark_server -lark_memory -lark_http -lark_utils -lark_template -lark_task \
+        -L$LIB_DIR -lark_server -lark_memory -lark_http -lark_utils -lark_template -lark_task -lsqlite3 \
         -o $ENV_DIR/tilastorage
 
     echo "✅ $ENV_DIR build complete!"

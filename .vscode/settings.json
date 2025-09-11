@@ -54,7 +54,12 @@
         "fcntl.h": "c",
         "stdlib.h": "c",
         "compare": "c",
-        "errno.h": "c"
+        "errno.h": "c",
+        "escape.h": "c",
+        "limits.h": "c",
+        "stdbool.h": "c",
+        "serialize.h": "c",
+        "*.inc": "c"
     },
     "C_Cpp.errorSquiggles": "enabled"
 }
