@@ -1,3 +1,5 @@
+#define _XOPEN_SOURCE 700  // Required for strptime on Linux
+
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
@@ -7,6 +9,7 @@
 #include <assert.h>
 #include <sqlite3.h>
 #include <argon2.h>
+#include <time.h>
 
 #include "ark/shared.h"
 #include "ark/server.h"
@@ -71,7 +74,7 @@ uint32_t component_arr_length;
 sqlite3 *db;
 
 int check_password(char *errors[1], uint32_t *errors_count, char *password, uint32_t password_length) {
-    if (password_length < 10) {
+    if (password_length < 4) {
         errors[*errors_count] = error_messages[ERR_MIN_PASSWORD_LENGTH];
         *errors_count += 1;
     }
@@ -359,7 +362,9 @@ void signup_create_account(void *v) {
 
     char *errors[1] = {0};
     uint32_t errors_count = 0;
-    check_email(errors, &errors_count, h.p[0].val.p, h.p[0].val.n);
+    char *email = h.p[0].val.p;
+    uint32_t email_length = h.p[0].val.n;
+    check_email(errors, &errors_count, email, email_length);
     
     memset(errors, 0, sizeof(errors));
     errors_count = 0;
@@ -396,9 +401,61 @@ void signup_create_account(void *v) {
         assert(0);
     }
 
+    const char *sql = "INSERT INTO users (email, password) VALUES (?, ?) RETURNING id;";
+    sqlite3_stmt *stmt = NULL;
+
+    sqlite3_prepare_v2((sqlite3 *)db, sql, strlen(sql) + 1, &stmt, NULL);
+    sqlite3_bind_text(stmt, 1, email, email_length, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 2, hashed_password, strlen(hashed_password), SQLITE_STATIC);
+
+    if (sqlite3_step(stmt) != SQLITE_ROW) {
+        assert(0);
+    }
+    
+    int user_id = sqlite3_column_int(stmt, 0);
+
+    sqlite3_finalize(stmt);
+
+    sql = "INSERT OR REPLACE INTO sessions (user_id, expires_at, updated_at) "
+                  "VALUES (?, datetime('now', '+1 hour'), datetime('now')) "
+                  "RETURNING id, expires_at;";
+    
+    sqlite3_prepare_v2(db, sql, strlen(sql) + 1, &stmt, NULL);
+    sqlite3_bind_int(stmt, 1, user_id);
+
+    if (sqlite3_step(stmt) != SQLITE_ROW) {
+        assert(0);
+    }
+
+    int session_id = sqlite3_column_int(stmt, 0);
+    const unsigned char *expires_at = sqlite3_column_text(stmt, 1);
+    
+    struct tm tm;
+    // Parse ISO 8601 datetime
+    if (strptime((const char *)expires_at, "%Y-%m-%d %H:%M:%S", &tm) == NULL) {
+        fprintf(stderr, "Failed to parse datetime\n");
+        assert(0);
+    }
+
+    // Convert to time_t (seconds since epoch)
+    time_t t = timegm(&tm);  // timegm treats tm as UTC
+
+    // Format as HTTP Date header
+    char http_date[100];
+    strftime(http_date, sizeof(http_date), "%a, %d %b %Y %H:%M:%S GMT", gmtime(&t));
+
+    printf("HTTP Date: %s\n", http_date);
+
+    sqlite3_finalize(stmt);
+
     char response[KB(4)];
     bzero(response, KB(4));
-    sprintf(response, "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
+    sprintf(response,
+            "HTTP/1.1 200 OK\r\n"
+            "Set-Cookie: session_id=%d; Path=/; HttpOnly; Secure; SameSite=Strict; Expires=%s\r\n"
+            "Content-Length: 0\r\n"
+            "HX-Redirect: /\r\n\r\n",
+            session_id, http_date);
     
     int response_length = strlen(response);
     ark_fd_write(request_ctx->fd, response, response_length);
