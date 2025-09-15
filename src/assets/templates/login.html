@@ -1,0 +1,32 @@
+<x-def name="login">
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        
+        <script src="https://unpkg.com/htmx.org@1.9.10" integrity="sha384-D1Kt99CQMDuVetoL1lrYwg5t+9QdHe7NLX/SoJYkXDFfX37iInKRy5xLSi8nO7UC" crossorigin="anonymous" defer></script>
+        <script src="https://unpkg.com/htmx-ext-response-targets@2.0.0/response-targets.js" defer></script>
+        
+        <title>Login</title>
+    </head>
+    <body>
+        <div id="status"></div>
+        <form 
+          id="login-form"
+          hx-post="/login/create-session"
+          hx-target="#status"
+          hx-swap="innerHTML"
+        >
+            <label for="email">Email</label>
+            <input type="email" id="email" name="email" required />
+
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" required minlength="6" />
+
+            <button type="submit">Login</button>
+        </form>
+      </div>
+    </body>
+    </html>
+</x-def>

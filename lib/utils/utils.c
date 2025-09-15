@@ -11,7 +11,6 @@
 #include "../../include/ark/utils.h"
 
 void bzero(void *p, size_t n) { memset(p, 0, n); }
-int is_digit(uint8_t c) { return '0' <= c && c <= '9'; }
 
 unsigned long available_ram() {
     struct sysinfo info;
@@ -166,4 +165,33 @@ size_t ark_get_file_size(char *filepath) {
     fclose(file);
 
     return (size_t)file_size;
+}
+
+int string_to_int(int *result, char *str, uint32_t length) {
+    int sign = 1;
+    int i = 0;
+
+    // Handle optional sign (only if we have at least 1 character)
+    if (length > 0 && str[0] == '-') {
+        sign = -1;
+        i++;
+    } else if (length > 0 && str[0] == '+') {
+        i++;
+    }
+
+    // Iterate through characters up to length
+    for (; i < length; i++) {
+        char c = str[i];
+        if (c >= '0' && c <= '9') {
+            *result = *result * 10 + (c - '0');
+        } else {
+            // Stop if we find a non-digit
+            break;
+        }
+    }
+
+
+    *result *= sign;
+
+    return 0;
 }

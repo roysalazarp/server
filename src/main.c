@@ -47,6 +47,10 @@ char *error_messages[] = {
 #define SALT_LENGTH 16
 #define PASSWORD_BUFFER 255
 
+#define HasHeader(H)    (!!msg->headers[H].a)
+#define HeaderData(H)   (request + msg->headers[H].a)
+#define HeaderLength(H) (msg->headers[H].b - msg->headers[H].a)
+
 #define UrlEqual(S) \
   SlicesEqual(request + msg->uri.a, msg->uri.b - msg->uri.a, S, strlen(S))
 
@@ -327,23 +331,86 @@ int find_element_index(uint32_t *index, char **arr, char *str, uint32_t arr_leng
     return -1;
 }
 
-void home(void *v) {
+void login_create_session(void *v) {
     RequestCtx *request_ctx = (RequestCtx *)v;
+    char *request = request_ctx->request;
+    struct HttpMessage *msg = request_ctx->msg;
 
-    uint32_t index = 0;
-    find_element_index(&index, component_name_arr, "home", component_arr_length);
-    char *component = component_content_arr[index];
-    uint32_t component_length = strlen(component);
-    assert(component_length);
+    struct UrlParams h;
+    ParseParams(request + msg->i, -1, &h);
 
-    char response[KB(2)];
-    bzero(response, KB(2));
+    char *errors[1] = {0};
+    uint32_t errors_count = 0;
+    char *email = h.p[0].val.p;
+    uint32_t email_length = h.p[0].val.n;
+    check_email(errors, &errors_count, email, email_length);
+    
+    memset(errors, 0, sizeof(errors));
+    errors_count = 0;
+    char *password = h.p[1].val.p;
+    uint32_t password_length = h.p[1].val.n;
+    check_password(errors, &errors_count, h.p[1].val.p, h.p[1].val.n);
+
+    const char *sql = "SELECT id, password FROM users WHERE email = ?;";
+    sqlite3_stmt *stmt = NULL;
+
+    sqlite3_prepare_v2(db, sql, strlen(sql) + 1, &stmt, NULL);
+    sqlite3_bind_text(stmt, 1, email, email_length, SQLITE_STATIC);
+
+    if (sqlite3_step(stmt) != SQLITE_ROW) {
+        assert(0);
+    }
+
+    int user_id = sqlite3_column_int(stmt, 0);
+    const char *hashed_password = (const char *)sqlite3_column_text(stmt, 1);
+
+    if (argon2i_verify(hashed_password, password, password_length) != ARGON2_OK) {
+        printf("Failed to verify password\n");
+        assert(0);
+    }
+
+    sqlite3_finalize(stmt);
+
+    sql = "INSERT OR REPLACE INTO sessions (user_id, expires_at, updated_at) "
+          "VALUES (?, datetime('now', '+1 hour'), datetime('now')) "
+          "RETURNING id, expires_at;";
+    
+    sqlite3_prepare_v2(db, sql, strlen(sql) + 1, &stmt, NULL);
+    sqlite3_bind_int(stmt, 1, user_id);
+
+    if (sqlite3_step(stmt) != SQLITE_ROW) {
+        assert(0);
+    }
+
+    int session_id = sqlite3_column_int(stmt, 0);
+    const unsigned char *expires_at = sqlite3_column_text(stmt, 1);
+    
+    struct tm tm;
+    // Parse ISO 8601 datetime
+    if (strptime((const char *)expires_at, "%Y-%m-%d %H:%M:%S", &tm) == NULL) {
+        fprintf(stderr, "Failed to parse datetime\n");
+        assert(0);
+    }
+
+    // Convert to time_t (seconds since epoch)
+    time_t t = timegm(&tm);  // timegm treats tm as UTC
+
+    // Format as HTTP Date header
+    char http_date[100];
+    strftime(http_date, sizeof(http_date), "%a, %d %b %Y %H:%M:%S GMT", gmtime(&t));
+
+    printf("HTTP Date: %s\n", http_date);
+
+    sqlite3_finalize(stmt);
+
+    char response[KB(4)];
+    bzero(response, KB(4));
     sprintf(response,
-        "HTTP/1.1 200 OK\r\n"
-        "Content-Length: %d\r\n"
-        "Content-Type: text/html\r\n\r\n"
-        "%s",
-        component_length, component);
+            "HTTP/1.1 200 OK\r\n"
+            "Set-Cookie: session_id=%d; Path=/; HttpOnly; Secure; SameSite=Strict; Expires=%s\r\n"
+            "Content-Length: 0\r\n"
+            "HX-Redirect: /\r\n\r\n",
+            session_id, http_date);
     
     int response_length = strlen(response);
     ark_fd_write(request_ctx->fd, response, response_length);
@@ -417,8 +484,8 @@ void signup_create_account(void *v) {
     sqlite3_finalize(stmt);
 
     sql = "INSERT OR REPLACE INTO sessions (user_id, expires_at, updated_at) "
-                  "VALUES (?, datetime('now', '+1 hour'), datetime('now')) "
-                  "RETURNING id, expires_at;";
+          "VALUES (?, datetime('now', '+1 hour'), datetime('now')) "
+          "RETURNING id, expires_at;";
     
     sqlite3_prepare_v2(db, sql, strlen(sql) + 1, &stmt, NULL);
     sqlite3_bind_int(stmt, 1, user_id);
@@ -456,6 +523,277 @@ void signup_create_account(void *v) {
             "Content-Length: 0\r\n"
             "HX-Redirect: /\r\n\r\n",
             session_id, http_date);
+    
+    int response_length = strlen(response);
+    ark_fd_write(request_ctx->fd, response, response_length);
+    
+    close(request_ctx->fd);
+    memory_free(request_ctx->memory);
+}
+
+typedef struct {
+  uint32_t a;
+  uint32_t b;
+} CookieSlice;
+
+typedef struct {
+  CookieSlice k;
+  CookieSlice v;
+} Cookie;
+
+typedef struct {
+  uint32_t n;
+  Cookie *p;
+} Cookies;
+
+#define IS_COOKIE_TOKEN(c)  true
+
+#define COOKIE_START 0
+#define COOKIE_KEY 1
+#define COOKIE_VALUE 2
+
+int cookie_count(uint32_t *count, char *cookies, uint32_t cookies_length) {
+    if (cookies_length) {
+        // we can assume there is at least one cookie
+        *count += 1;
+    }
+    
+    uint32_t cursor = 0;
+    int ch;
+    for (; cursor < cookies_length;) {
+        ch = cookies[cursor];
+        if (ch == ';') {
+            *count += 1;
+        }
+        cursor++;
+    }
+
+    return 0;
+}
+
+int parse_cookies(Cookies *ck, char *cookies, uint32_t cookies_length) {
+    uint32_t cursor = 0;
+    int ch;
+
+    int start;
+    
+    uint32_t t = 0;
+    for (; cursor < cookies_length;) {
+        ch = cookies[cursor];
+        switch (t) {
+            case COOKIE_START: {
+                for (;;) {
+                    if (IS_COOKIE_TOKEN(ch)) {
+                        start = cursor;
+                        t = COOKIE_KEY;
+                        break;
+                    }
+                    if (ch != ' ') {
+                        return -1;
+                    }
+                    if (++cursor == cookies_length) {
+                        break;
+                    }
+                    ch = cookies[cursor];
+                }
+                break;
+            }
+            case COOKIE_KEY: {
+                for (;;) {
+                    if (ch == ';') {
+                        ck->p[ck->n].k.a = start;
+                        ck->p[ck->n].k.b = cursor;
+
+                        cursor += 1; /* skip ; */
+                        start = cursor;
+                        t = COOKIE_KEY;
+                        ck->n++;
+                        break;
+                    }
+                    if (ch == '=') {
+                        ck->p[ck->n].k.a = start;
+                        ck->p[ck->n].k.b = cursor;
+
+                        cursor += 1; /* skip = */
+                        start = cursor;
+                        t = COOKIE_VALUE;
+                        break;
+                    }
+                    if (!IS_COOKIE_TOKEN(ch)) {
+                        return -1;
+                    }
+                    if (++cursor == cookies_length) {
+                        ck->p[ck->n].k.a = start;
+                        ck->p[ck->n].k.b = cursor;
+                        ck->n++;
+                        break;
+                    }
+                    ch = cookies[cursor];
+                }
+                break;
+            }
+            case COOKIE_VALUE: {
+                for (;;) {
+                    if (ch == ';') {
+                        ck->p[ck->n].v.a = start;
+                        ck->p[ck->n].v.b = cursor;
+    
+                        char separator = cursor;
+                        cursor += 1; /* skip ; */
+                        start = cursor;
+                        t = COOKIE_KEY;
+                        ck->n++;
+                        break;
+                    }
+                    if (!IS_COOKIE_TOKEN(ch)) {
+                        return -1;
+                    }
+                    if (++cursor == cookies_length) {
+                        ck->p[ck->n].v.a = start;
+                        ck->p[ck->n].v.b = cursor;
+                        ck->n++;
+                        break;
+                    }
+                    ch = cookies[cursor];
+                }
+                break;
+            }
+            default: {
+                break;
+            }
+        }
+    }
+
+    return 0;
+}
+
+int is_authenticated(int *user_id, RequestCtx *request_ctx) {
+    char *request = request_ctx->request;
+    struct HttpMessage *msg = request_ctx->msg;
+    Memory *memory = request_ctx->memory;
+    
+    char *cookie = NULL;
+    if (HasHeader(kHttpCookie)) {
+        char *cookies = HeaderData(kHttpCookie);
+        uint32_t cookies_length = HeaderLength(kHttpCookie);
+
+        uint32_t count = 0;
+        cookie_count(&count, cookies, cookies_length);
+
+        Cookies parsed_cookies = {0};
+        parsed_cookies.p = memory_alloc(memory, count * sizeof(Cookie));
+
+        parse_cookies(&parsed_cookies, cookies, cookies_length);
+        
+        char *session_id_str = NULL;   
+        uint32_t session_id_str_length = 0;     
+
+        uint32_t i;
+        for (i = 0; i < parsed_cookies.n; i++) {
+            char *cookie_key = cookies + parsed_cookies.p[i].k.a;
+            uint32_t cookie_key_length = parsed_cookies.p[i].k.b - parsed_cookies.p[i].k.a;
+            
+            if (SlicesEqual(cookie_key, cookie_key_length, "session_id", strlen("session_id"))) {
+                session_id_str = cookies + parsed_cookies.p[i].v.a;
+                session_id_str_length = parsed_cookies.p[i].v.b - parsed_cookies.p[i].v.a;
+                break;
+            }
+        }
+
+        if (!session_id_str_length) {
+            return 0;
+        }
+        
+        int session_id = 0;
+        string_to_int(&session_id, session_id_str, session_id_str_length);
+
+        const char *sql = "SELECT user_id FROM sessions WHERE id = ? AND datetime('now') < expires_at;";
+        sqlite3_stmt *stmt = NULL;
+
+        sqlite3_prepare_v2(db, sql, strlen(sql) + 1, &stmt, NULL);
+        sqlite3_bind_int(stmt, 1, session_id);
+
+        if (sqlite3_step(stmt) != SQLITE_ROW) {
+            assert(0);
+        }
+        
+        *user_id = sqlite3_column_int(stmt, 0);
+
+        sqlite3_finalize(stmt);
+    }
+
+    return 0;
+}
+
+void home(void *v) {
+    RequestCtx *request_ctx = (RequestCtx *)v;
+
+    int user_id = 0;
+    is_authenticated(&user_id, request_ctx);
+
+    uint32_t index = 0;
+    find_element_index(&index, component_name_arr, "home", component_arr_length);
+    char *component = component_content_arr[index];
+    uint32_t component_length = strlen(component);
+    assert(component_length);
+
+    char response[KB(2)];
+    bzero(response, KB(2));
+    sprintf(response,
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Length: %d\r\n"
+        "Content-Type: text/html\r\n\r\n"
+        "%s",
+        component_length, component);
+    
+    int response_length = strlen(response);
+    ark_fd_write(request_ctx->fd, response, response_length);
+    
+    close(request_ctx->fd);
+    memory_free(request_ctx->memory);
+}
+
+void logout(void *v)  {
+    RequestCtx *request_ctx = (RequestCtx *)v;
+    char *request = request_ctx->request;
+    struct HttpMessage *msg = request_ctx->msg;
+
+    int user_id = 0;
+    is_authenticated(&user_id, request_ctx);
+
+    char response[KB(4)];
+    bzero(response, KB(4));
+    sprintf(response,
+           "HTTP/1.1 200 OK\r\n"
+           "Set-Cookie: session_id=deleted; Path=/; HttpOnly; Secure; SameSite=Strict; Expires=Thu, 01 Jan 1970 00:00:00 GMT\r\n"
+           "Content-Length: 0\r\n"
+           "HX-Refresh: true\r\n\r\n");
+    
+    int response_length = strlen(response);
+    ark_fd_write(request_ctx->fd, response, response_length);
+    
+    close(request_ctx->fd);
+    memory_free(request_ctx->memory);
+
+}
+
+void login(void *v) {
+    RequestCtx *request_ctx = (RequestCtx *)v;
+
+    uint32_t index = 0;
+    find_element_index(&index, component_name_arr, "login", component_arr_length);
+    char *component = component_content_arr[index];
+    uint32_t component_length = strlen(component);
+    assert(component_length);
+
+    char response[KB(4)];
+    bzero(response, KB(4));
+    sprintf(response,
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Length: %d\r\n"
+        "Content-Type: text/html\r\n\r\n"
+        "%s",
+        component_length, component);
     
     int response_length = strlen(response);
     ark_fd_write(request_ctx->fd, response, response_length);
@@ -553,8 +891,14 @@ void handler(void *arg) {
         
         if (UrlEqual("/")) {
             ark_task_create(home, request_ctx, KB(8));
+        } else if (UrlEqual("/login")) {
+            ark_task_create(login, request_ctx, KB(16));
+        } else if (UrlEqual("/logout")) {
+            ark_task_create(logout, request_ctx, KB(16));
         } else if (UrlEqual("/signup")) {
             ark_task_create(signup, request_ctx, KB(16));
+        } else if (UrlStartsWith("/login/create-session")) {
+            ark_task_create(login_create_session, request_ctx, KB(16));
         } else if (UrlStartsWith("/signup/create-account")) {
             ark_task_create(signup_create_account, request_ctx, KB(16));
         } else {
