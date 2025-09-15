@@ -46,6 +46,7 @@ build_env() {
         lib/http/khextoint.c \
         lib/http/parsehttpmessage.c \
         lib/http/parseurl.c \
+        lib/http/parsehttpcookies.c \
         -o $LIB_DIR/libark_http.so
     
     $CC $CFLAGS -fPIC -shared lib/memory/memory.c -o $LIB_DIR/libark_memory.so

@@ -8,6 +8,8 @@
 
 #define SlicesEqual(a, n, b, m)       \
   ({                                  \
+    /* if n is an expression, __n will cache the result of the n expression */ \
+    /* no need to do the same thing for m since it's only used once */         \
     size_t __n = (n);                 \
     __n == (m) && !memcmp(a, b, __n); \
   })

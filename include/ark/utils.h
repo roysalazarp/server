@@ -2,6 +2,7 @@
 #define ARK_UTILS_H
 
 #include <stdio.h>
+#include <stdint.h>
 
 void bzero(void *p, size_t n);
 unsigned long available_ram();

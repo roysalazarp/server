@@ -65,7 +65,13 @@
         "unordered_map": "c",
         "argon2.h": "c",
         "time.h": "c",
-        "uuid.h": "c"
+        "uuid.h": "c",
+        "globals.h": "c",
+        "routes.h": "c",
+        "url.h": "c",
+        "parsers.h": "c",
+        "cookies.h": "c",
+        "sqlite3.h": "c"
     },
     "C_Cpp.errorSquiggles": "enabled"
 }
