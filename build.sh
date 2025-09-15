@@ -73,7 +73,7 @@ build_env() {
     echo "🚀 Building main program for $ENV_DIR..."
     SRC_FILES=$(find ./src -name "*.c")
     $CC $CFLAGS $SRC_FILES -I$ENV_DIR/ArkSDK/include \
-        -L$LIB_DIR -lark_server -lark_memory -lark_http -lark_utils -lark_template -lark_task -lsqlite3 -largon2 \
+        -L$LIB_DIR -lark_server -lark_memory -lark_http -lark_utils -lark_template -lark_task -lsqlite3 -largon2 -luuid \
         -o $ENV_DIR/tilastorage
 
     echo "✅ $ENV_DIR build complete!"

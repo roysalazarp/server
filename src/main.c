@@ -10,6 +10,7 @@
 #include <sqlite3.h>
 #include <argon2.h>
 #include <time.h>
+#include <uuid/uuid.h>
 
 #include "ark/shared.h"
 #include "ark/server.h"
@@ -371,19 +372,26 @@ void login_create_session(void *v) {
 
     sqlite3_finalize(stmt);
 
-    sql = "INSERT OR REPLACE INTO sessions (user_id, expires_at, updated_at) "
-          "VALUES (?, datetime('now', '+1 hour'), datetime('now')) "
-          "RETURNING id, expires_at;";
+    uuid_t uuid;
+    char session_id[37];
+    uuid_generate(uuid);
+    uuid_unparse_lower(uuid, session_id);
+
+    printf("Generated UUID: %s\n", session_id);
+
+    sql = "INSERT OR REPLACE INTO sessions (id, user_id, expires_at, updated_at) "
+          "VALUES (?, ?, datetime('now', '+1 month'), datetime('now')) "
+          "RETURNING expires_at;";
     
     sqlite3_prepare_v2(db, sql, strlen(sql) + 1, &stmt, NULL);
-    sqlite3_bind_int(stmt, 1, user_id);
+    sqlite3_bind_text(stmt, 1, session_id, strlen(session_id), SQLITE_STATIC);
+    sqlite3_bind_int(stmt, 2, user_id);
 
     if (sqlite3_step(stmt) != SQLITE_ROW) {
         assert(0);
     }
 
-    int session_id = sqlite3_column_int(stmt, 0);
-    const unsigned char *expires_at = sqlite3_column_text(stmt, 1);
+    const unsigned char *expires_at = sqlite3_column_text(stmt, 0);
     
     struct tm tm;
     // Parse ISO 8601 datetime
@@ -407,7 +415,7 @@ void login_create_session(void *v) {
     bzero(response, KB(4));
     sprintf(response,
             "HTTP/1.1 200 OK\r\n"
-            "Set-Cookie: session_id=%d; Path=/; HttpOnly; Secure; SameSite=Strict; Expires=%s\r\n"
+            "Set-Cookie: session_id=%s; Path=/; HttpOnly; Secure; SameSite=Strict; Expires=%s\r\n"
             "Content-Length: 0\r\n"
             "HX-Redirect: /\r\n\r\n",
             session_id, http_date);
@@ -483,19 +491,26 @@ void signup_create_account(void *v) {
 
     sqlite3_finalize(stmt);
 
-    sql = "INSERT OR REPLACE INTO sessions (user_id, expires_at, updated_at) "
-          "VALUES (?, datetime('now', '+1 hour'), datetime('now')) "
-          "RETURNING id, expires_at;";
+    uuid_t uuid;
+    char session_id[37];
+    uuid_generate(uuid);
+    uuid_unparse_lower(uuid, session_id);
+
+    printf("Generated UUID: %s\n", session_id);
+
+    sql = "INSERT OR REPLACE INTO sessions (id, user_id, expires_at, updated_at) "
+          "VALUES (?, ?, datetime('now', '+1 month'), datetime('now')) "
+          "RETURNING expires_at;";
     
     sqlite3_prepare_v2(db, sql, strlen(sql) + 1, &stmt, NULL);
-    sqlite3_bind_int(stmt, 1, user_id);
+    sqlite3_bind_text(stmt, 1, session_id, strlen(session_id), SQLITE_STATIC);
+    sqlite3_bind_int(stmt, 2, user_id);
 
     if (sqlite3_step(stmt) != SQLITE_ROW) {
         assert(0);
     }
 
-    int session_id = sqlite3_column_int(stmt, 0);
-    const unsigned char *expires_at = sqlite3_column_text(stmt, 1);
+    const unsigned char *expires_at = sqlite3_column_text(stmt, 0);
     
     struct tm tm;
     // Parse ISO 8601 datetime
@@ -519,7 +534,7 @@ void signup_create_account(void *v) {
     bzero(response, KB(4));
     sprintf(response,
             "HTTP/1.1 200 OK\r\n"
-            "Set-Cookie: session_id=%d; Path=/; HttpOnly; Secure; SameSite=Strict; Expires=%s\r\n"
+            "Set-Cookie: session_id=%s; Path=/; HttpOnly; Secure; SameSite=Strict; Expires=%s\r\n"
             "Content-Length: 0\r\n"
             "HX-Redirect: /\r\n\r\n",
             session_id, http_date);
@@ -685,8 +700,8 @@ int is_authenticated(int *user_id, RequestCtx *request_ctx) {
 
         parse_cookies(&parsed_cookies, cookies, cookies_length);
         
-        char *session_id_str = NULL;   
-        uint32_t session_id_str_length = 0;     
+        char *session_id = NULL;   
+        uint32_t session_id_length = 0;     
 
         uint32_t i;
         for (i = 0; i < parsed_cookies.n; i++) {
@@ -694,24 +709,21 @@ int is_authenticated(int *user_id, RequestCtx *request_ctx) {
             uint32_t cookie_key_length = parsed_cookies.p[i].k.b - parsed_cookies.p[i].k.a;
             
             if (SlicesEqual(cookie_key, cookie_key_length, "session_id", strlen("session_id"))) {
-                session_id_str = cookies + parsed_cookies.p[i].v.a;
-                session_id_str_length = parsed_cookies.p[i].v.b - parsed_cookies.p[i].v.a;
+                session_id = cookies + parsed_cookies.p[i].v.a;
+                session_id_length = parsed_cookies.p[i].v.b - parsed_cookies.p[i].v.a;
                 break;
             }
         }
 
-        if (!session_id_str_length) {
+        if (!session_id_length) {
             return 0;
         }
-        
-        int session_id = 0;
-        string_to_int(&session_id, session_id_str, session_id_str_length);
 
         const char *sql = "SELECT user_id FROM sessions WHERE id = ? AND datetime('now') < expires_at;";
         sqlite3_stmt *stmt = NULL;
 
         sqlite3_prepare_v2(db, sql, strlen(sql) + 1, &stmt, NULL);
-        sqlite3_bind_int(stmt, 1, session_id);
+        sqlite3_bind_text(stmt, 1, session_id, session_id_length, SQLITE_STATIC);
 
         if (sqlite3_step(stmt) != SQLITE_ROW) {
             assert(0);
@@ -919,7 +931,7 @@ void handler(void *arg) {
 int main() {
     setbuf(stdout, NULL);
 
-    if (sqlite3_open("/workspaces/server/dev.sqlite", &db) != SQLITE_OK) {
+    if (sqlite3_open("/workspaces/server/dev.db", &db) != SQLITE_OK) {
         fprintf(stderr, "Cannot open DB: %s\n", sqlite3_errmsg(db));
         assert(0);
     }
