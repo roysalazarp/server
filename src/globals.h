@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 #include <sqlite3.h>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
 
 #define HASH_LENGTH 32
 #define SALT_LENGTH 16
@@ -19,5 +21,8 @@ typedef enum {
     ERR_MIN_PASSWORD_LENGTH,
     ERR_INVALID_EMAIL,
 } UserErrorCodes;
+
+int		ark_fd_read(SSL *, int, void*, int);
+int		ark_fd_write(SSL *, int, void*, int);
 
 #endif // GLOBALS_H

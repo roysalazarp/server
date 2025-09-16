@@ -71,7 +71,8 @@
         "url.h": "c",
         "parsers.h": "c",
         "cookies.h": "c",
-        "sqlite3.h": "c"
+        "sqlite3.h": "c",
+        "poll.h": "c"
     },
     "C_Cpp.errorSquiggles": "enabled"
 }

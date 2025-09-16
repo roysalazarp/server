@@ -2,6 +2,7 @@
 #define ROUTES_H
 
 #include <stdint.h>
+#include <openssl/ssl.h>
 
 #include "ark/http.h"
 #include "ark/memory.h"
@@ -12,6 +13,7 @@ typedef struct {
     struct HttpMessage *msg;
     char *raw_request;
     uint32_t raw_request_length;
+    SSL *ssl;
 } RequestCtx;
 
 void login_create_session(void *v);

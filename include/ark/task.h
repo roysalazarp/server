@@ -153,8 +153,8 @@ int		chansendul(Channel *c, unsigned long v);
 /*
  * Threaded I/O.
  */
-int		ark_fd_read(int, void*, int);
-int		ark_fd_write(int, void*, int);
+// int		ark_fd_read(int, void*, int);
+// int		ark_fd_write(int, void*, int);
 void		ark_fd_await(int, int);
 int		fdnoblock(int);
 

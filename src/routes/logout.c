@@ -25,8 +25,8 @@ void logout(void *v)  {
         sqlite3_finalize(stmt);
     }
 
-    char response[KB(4)];
-    bzero(response, KB(4));
+    char response[KB(8)];
+    bzero(response, KB(8));
     sprintf(response,
            "HTTP/1.1 200 OK\r\n"
            "Set-Cookie: session_id=deleted; Path=/; HttpOnly; Secure; SameSite=Strict; Expires=Thu, 01 Jan 1970 00:00:00 GMT\r\n"
@@ -34,8 +34,10 @@ void logout(void *v)  {
            "HX-Refresh: true\r\n\r\n");
     
     int response_length = strlen(response);
-    ark_fd_write(rctx->fd, response, response_length);
+    ark_fd_write(rctx->ssl, rctx->fd, response, response_length);
     
+    SSL_shutdown(rctx->ssl);
+    SSL_free(rctx->ssl);
     close(rctx->fd);
     memory_free(rctx->memory);
 }

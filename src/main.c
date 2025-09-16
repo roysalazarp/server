@@ -6,6 +6,8 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <sqlite3.h>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
 
 #include "ark/shared.h"
 #include "ark/server.h"
@@ -21,7 +23,7 @@
 #include "parsers/parsers.h"
 #include "globals.h"
 
-#define PORT 8081
+#define PORT 443
 
 #define ARK_MAX_HTTP_REQUEST_SIZE MB(300)
 #define ARK_MAX_QUEUED_HTTP_REQUESTS 500
@@ -58,10 +60,42 @@ char **component_content_arr;
 uint32_t component_arr_length;
 sqlite3 *db;
 
+SSL_CTX *ctx;
+
 char *error_messages[] = {
     [ERR_MIN_PASSWORD_LENGTH] = "Password should be at least 4 characters",
     [ERR_INVALID_EMAIL] = "Invalid email format",
 };
+
+int
+ark_fd_read(SSL *ssl, int fd, void *buf, int n)
+{
+	int m;
+	
+	while((m=SSL_read(ssl, buf, n)) < 0) {
+		int err = SSL_get_error(ssl, m);
+        ark_fd_await(fd, 'r');
+    }
+
+	return m;
+}
+
+int
+ark_fd_write(SSL *ssl, int fd, void *buf, int n)
+{
+	int m, tot;
+	
+	for(tot=0; tot<n; tot+=m){
+		while((m=SSL_write(ssl, (char*)buf+tot, n-tot)) < 0 && errno == EAGAIN)
+			ark_fd_await(fd, 'w');
+		if(m < 0)
+			return m;
+		if(m == 0)
+			break;
+	}
+	return tot;
+}
+
 
 void make_request(void *v) {
     ServerUri *server_uri = (ServerUri *)v;
@@ -74,9 +108,9 @@ void make_request(void *v) {
         assert(0);
     }
     snprintf(buf, sizeof buf, "GET %s HTTP/1.0\r\nHost: %s\r\n\r\n", server_uri->uri, server_uri->server);
-    ark_fd_write(filedescriptor, buf, strlen(buf));
-    while((n = ark_fd_read(filedescriptor, buf, sizeof buf)) > 0)
-        ;
+    // ark_fd_write(filedescriptor, buf, strlen(buf));
+    // while((n = ark_fd_read(filedescriptor, buf, sizeof buf)) > 0)
+    //     ;
     close(filedescriptor);
     chansend(server_uri->done, NULL);
 }
@@ -111,7 +145,7 @@ void get_a(void *v) {
     char resbuf[1000];
     snprintf(resbuf, sizeof resbuf, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 11\r\n\r\nHello World");
     int len = strlen(resbuf);
-    ark_fd_write(rctx->fd, resbuf, len);
+    // ark_fd_write(rctx->fd, resbuf, len);
 }
 
 void get_b(void *v) {
@@ -144,23 +178,34 @@ void get_b(void *v) {
     char resbuf[1000];
     snprintf(resbuf, sizeof resbuf, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 11\r\n\r\nHello World");
     int len = strlen(resbuf);
-    ark_fd_write(rctx->fd, resbuf, len);
+    // ark_fd_write(rctx->fd, resbuf, len);
 }
 
 void handler(void *arg) {
     int fd = *(int *)arg;
 
     for (;;) {
+        int op_res;
         ark_fd_await(fd, 'r');
         
         RequestCtx rctx = {0};
-        rctx.memory = reserve_memory(PAGE_SIZE * 15);
+        rctx.memory = reserve_memory(PAGE_SIZE * 25);
         
         ark_client_accept(&rctx.fd, fd);
         ark_fd_await(rctx.fd, 'r');
+        
+        rctx.ssl = SSL_new(ctx);
+
+        op_res = SSL_set_fd(rctx.ssl, rctx.fd);
+        assert(op_res == 1);
+
+        op_res = SSL_accept(rctx.ssl);
+        assert(op_res > 0);
+
+        ark_fd_await(rctx.fd, 'r');
 
         rctx.raw_request = memory_alloc(rctx.memory, sizeof(char) * MAX_REQUEST_MSG_SIZE);
-        ark_fd_read(rctx.fd, rctx.raw_request, MAX_REQUEST_MSG_SIZE);
+        ark_fd_read(rctx.ssl, rctx.fd, rctx.raw_request, MAX_REQUEST_MSG_SIZE);
         rctx.raw_request_length = strlen(rctx.raw_request);
 
         rctx.msg = memory_alloc(rctx.memory, sizeof(struct HttpMessage));
@@ -178,17 +223,17 @@ void handler(void *arg) {
         }
         
         if (GET("/")) {
-            ark_task_create(home, &rctx, KB(8));
+            ark_task_create(home, &rctx, KB(32));
         } else if (GET("/login")) {
-            ark_task_create(login, &rctx, KB(16));
+            ark_task_create(login, &rctx, KB(32));
         } else if (POST("/logout")) {
-            ark_task_create(logout, &rctx, KB(16));
+            ark_task_create(logout, &rctx, KB(32));
         } else if (GET("/signup")) {
-            ark_task_create(signup, &rctx, KB(16));
+            ark_task_create(signup, &rctx, KB(32));
         } else if (POST("/login/create-session")) {
-            ark_task_create(login_create_session, &rctx, KB(16));
+            ark_task_create(login_create_session, &rctx, KB(32));
         } else if (POST("/signup/create-account")) {
-            ark_task_create(signup_create_account, &rctx, KB(16));
+            ark_task_create(signup_create_account, &rctx, KB(32));
         } else {
             ark_task_create(not_found, &rctx, KB(8));
         }
@@ -204,20 +249,37 @@ void handler(void *arg) {
     }
 }
 
+int full_path(char *buffer, uint32_t buffer_size, char *relative_path) {
+    char cwd[PATH_MAX];
+
+    int res = getcwd(cwd, sizeof(cwd));
+    if (!res) {
+        perror("getcwd");
+        return -1;
+    }
+
+    snprintf(buffer, buffer_size, "%s/%s", cwd, relative_path);    
+    return 0;
+}
+
 int main() {
+    int op_res;
     setbuf(stdout, NULL);
 
-    if (sqlite3_open("/workspaces/server/dev.db", &db) != SQLITE_OK) {
-        fprintf(stderr, "Cannot open DB: %s\n", sqlite3_errmsg(db));
-        assert(0);
-    }
+    char db_relpath[] = "./dev.db";
+    char db_path[1024];
+    bzero(db_path, 1024);
+    full_path(db_path, 1024, db_relpath);
+
+    op_res = sqlite3_open(db_path, &db);
+    assert(op_res == SQLITE_OK);
 
     uint32_t i;
     
     uint32_t num_of_filepaths = 0;
     ark_count_files(&num_of_filepaths, MYDIR);
     
-    Memory *memory = reserve_memory(PAGE_SIZE * 50);
+    Memory *memory = reserve_memory(PAGE_SIZE * 60);
     
     size_t *array_of_lengths = memory_alloc(memory, num_of_filepaths * sizeof(size_t));
     ark_list_file_sizes(array_of_lengths, num_of_filepaths, MYDIR);
@@ -282,12 +344,44 @@ int main() {
     int fd;
     ark_setup_server(&fd, PORT);
 
+    SSL_library_init();
+    SSL_load_error_strings();
+    OpenSSL_add_all_algorithms();
+
+    const SSL_METHOD *method = TLS_server_method();
+
+    ctx = SSL_CTX_new(method);
+    assert(ctx != NULL);
+
+    char ssl_path[1024];
+    
+    char ssl_certificate_relpath[] = "../fullchain.pem";
+    
+    bzero(ssl_path, 1024);
+    full_path(ssl_path, 1024, ssl_certificate_relpath);
+
+    op_res = SSL_CTX_use_certificate_file(ctx, ssl_path, SSL_FILETYPE_PEM);
+    assert(op_res > 0);
+
+    char ssl_privatekey_relpath[] = "../privkey.pem";
+    
+    bzero(ssl_path, 1024);
+    full_path(ssl_path, 1024, ssl_privatekey_relpath);
+
+    op_res = SSL_CTX_use_PrivateKey_file(ctx, ssl_path, SSL_FILETYPE_PEM);
+    assert(op_res > 0);
+
+    SSL_CTX_set_options(ctx, SSL_OP_IGNORE_UNEXPECTED_EOF);
+
     ark_task_create(handler, &fd, KB(8)); /** NOTE: Keep an eye that the stack size does not become a problem */
 	ark_task_run_scheduler();
     
     /** NOTE: Code bellow will never run */
-    
+
     sqlite3_close(db);
+    
+    SSL_CTX_free(ctx);
+    EVP_cleanup();
 
     return 0;
 }

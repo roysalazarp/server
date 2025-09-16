@@ -21,8 +21,8 @@ void signup(void *v) {
     uint32_t component_length = strlen(component);
     assert(component_length);
 
-    char response[KB(4)];
-    bzero(response, KB(4));
+    char response[KB(8)];
+    bzero(response, KB(8));
     sprintf(response,
         "HTTP/1.1 200 OK\r\n"
         "Content-Length: %d\r\n"
@@ -31,8 +31,10 @@ void signup(void *v) {
         component_length, component);
     
     int response_length = strlen(response);
-    ark_fd_write(rctx->fd, response, response_length);
+    ark_fd_write(rctx->ssl, rctx->fd, response, response_length);
     
+    SSL_shutdown(rctx->ssl);
+    SSL_free(rctx->ssl);
     close(rctx->fd);
     memory_free(rctx->memory);
 }
@@ -140,8 +142,8 @@ void signup_create_account(void *v) {
 
     sqlite3_finalize(stmt);
 
-    char response[KB(4)];
-    bzero(response, KB(4));
+    char response[KB(8)];
+    bzero(response, KB(8));
     sprintf(response,
             "HTTP/1.1 200 OK\r\n"
             "Set-Cookie: session_id=%s; Path=/; HttpOnly; Secure; SameSite=Strict; Expires=%s\r\n"
@@ -150,8 +152,10 @@ void signup_create_account(void *v) {
             session_id, http_date);
     
     int response_length = strlen(response);
-    ark_fd_write(rctx->fd, response, response_length);
+    ark_fd_write(rctx->ssl, rctx->fd, response, response_length);
     
+    SSL_shutdown(rctx->ssl);
+    SSL_free(rctx->ssl);
     close(rctx->fd);
     memory_free(rctx->memory);
 }

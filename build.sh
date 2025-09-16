@@ -23,8 +23,13 @@ PROD_CFLAGS="-O2 -Wall -Wextra -Werror \
 
 # Build function
 build_env() {
-    ENV_DIR=$1
+    ENV_NAME=$1
     CFLAGS=$2
+    
+    rm -rf build-"${ENV_NAME}"*
+
+    TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
+    ENV_DIR="build-${ENV_NAME}_${TIMESTAMP}"
 
     echo "📂 Building $ENV_DIR environment..."
 
@@ -32,7 +37,7 @@ build_env() {
     LIB_DIR=$ENV_DIR/ArkSDK/lib
     ASSETS_DIR=$ENV_DIR/assets
 
-    mkdir -p "$INCLUDE_DIR" "$LIB_DIR" "$ASSETS_DIR"
+    mkdir -p "$ENV_DIR" "$INCLUDE_DIR" "$LIB_DIR" "$ASSETS_DIR"
 
     echo "🔧 Compiling dynamic libraries for $ENV_DIR..."
 
@@ -70,18 +75,20 @@ build_env() {
     echo "📦 Packaging headers and assets for $ENV_DIR..."
     cp include/ark/*.h "$INCLUDE_DIR/"
     cp -r src/assets/* "$ASSETS_DIR/"
+    
+    if [ "$ENV_NAME" = "dev" ]; then
+        cp "$ENV_NAME.db" "$ENV_DIR/"
+    fi
 
     echo "🚀 Building main program for $ENV_DIR..."
     SRC_FILES=$(find ./src -name "*.c")
     $CC $CFLAGS $SRC_FILES -I$ENV_DIR/ArkSDK/include \
-        -L$LIB_DIR -lark_server -lark_memory -lark_http -lark_utils -lark_template -lark_task -lsqlite3 -largon2 -luuid \
+        -L$LIB_DIR -lark_server -lark_memory -lark_http -lark_utils -lark_template -lark_task -lsqlite3 -largon2 -luuid -lssl -lcrypto \
         -o $ENV_DIR/tilastorage
 
     echo "✅ $ENV_DIR build complete!"
 }
 
-# Run both builds
-build_env build "$PROD_CFLAGS"
 build_env dev "$DEV_CFLAGS"
 
 echo "🎉 All builds done!"

@@ -1,4 +1,4 @@
-build
-dev
 test/*
 !test/*.c
+*.pem
+build-*

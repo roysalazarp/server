@@ -253,34 +253,6 @@ taskdelay(uint ms)
 }
 
 int
-ark_fd_read(int fd, void *buf, int n)
-{
-	int m;
-	
-	while((m=read(fd, buf, n)) < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
-		ark_fd_await(fd, 'r');
-    }
-
-	return m;
-}
-
-int
-ark_fd_write(int fd, void *buf, int n)
-{
-	int m, tot;
-	
-	for(tot=0; tot<n; tot+=m){
-		while((m=write(fd, (char*)buf+tot, n-tot)) < 0 && errno == EAGAIN)
-			ark_fd_await(fd, 'w');
-		if(m < 0)
-			return m;
-		if(m == 0)
-			break;
-	}
-	return tot;
-}
-
-int
 fdnoblock(int fd)
 {
 	return fcntl(fd, F_SETFL, fcntl(fd, F_GETFL)|O_NONBLOCK);

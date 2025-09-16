@@ -18,8 +18,8 @@ void home(void *v) {
     uint32_t component_length = strlen(component);
     assert(component_length);
 
-    char response[KB(2)];
-    bzero(response, KB(2));
+    char response[KB(8)];
+    bzero(response, KB(8));
     sprintf(response,
         "HTTP/1.1 200 OK\r\n"
         "Content-Length: %d\r\n"
@@ -28,8 +28,10 @@ void home(void *v) {
         component_length, component);
     
     int response_length = strlen(response);
-    ark_fd_write(rctx->fd, response, response_length);
+    ark_fd_write(rctx->ssl, rctx->fd, response, response_length);
     
+    SSL_shutdown(rctx->ssl);
+    SSL_free(rctx->ssl);
     close(rctx->fd);
     memory_free(rctx->memory);
 }

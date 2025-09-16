@@ -25,8 +25,10 @@ void not_found(void *v) {
         component_length, component);
     
     int response_length = strlen(response);
-    ark_fd_write(rctx->fd, response, response_length);
+    ark_fd_write(rctx->ssl, rctx->fd, response, response_length);
     
+    SSL_shutdown(rctx->ssl);
+    SSL_free(rctx->ssl);
     close(rctx->fd);
     memory_free(rctx->memory);
 }

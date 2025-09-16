@@ -7,6 +7,7 @@ RUN apt-get install -y \
     libargon2-1 \
     libargon2-dev \
     uuid-dev \
+    libssl-dev \
     sqlite3 \
     libsqlite3-dev \
     gdb \
