@@ -12,24 +12,23 @@ DEV_CFLAGS="-g -DDEBUG=1 -Wall -Wextra -Werror \
     -Wno-declaration-after-statement -Wno-unused-variable \
     -Wno-long-long -Wno-missing-field-initializers \
     -Wno-implicit-function-declaration -Wno-unused-function \
-    -Wno-uninitialized -Wno-sign-compare"
+    -Wno-uninitialized -Wno-sign-compare -Wno-alloc-size"
 
 PROD_CFLAGS="-O2 -Wall -Wextra -Werror \
     -Wno-unused-parameter -Wno-unused-but-set-variable \
     -Wno-declaration-after-statement -Wno-unused-variable \
     -Wno-long-long -Wno-missing-field-initializers \
     -Wno-implicit-function-declaration -Wno-unused-function \
-    -Wno-uninitialized -Wno-sign-compare"
+    -Wno-uninitialized -Wno-sign-compare -Wno-alloc-size"
 
 # Build function
 build_env() {
-    ENV_NAME=$1
-    CFLAGS=$2
+    DB_NAME=$1
+    ENV_DIR_START=$2
+    ENV_DIR=$3
+    CFLAGS=$4
     
-    rm -rf build-"${ENV_NAME}"*
-
-    TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
-    ENV_DIR="build-${ENV_NAME}_${TIMESTAMP}"
+    rm -rf "${ENV_DIR_START}"*
 
     echo "📂 Building $ENV_DIR environment..."
 
@@ -76,9 +75,7 @@ build_env() {
     cp include/ark/*.h "$INCLUDE_DIR/"
     cp -r src/assets/* "$ASSETS_DIR/"
     
-    if [ "$ENV_NAME" = "dev" ]; then
-        cp "$ENV_NAME.db" "$ENV_DIR/"
-    fi
+    cp "$DB_NAME" "$ENV_DIR/"
 
     echo "🚀 Building main program for $ENV_DIR..."
     SRC_FILES=$(find ./src -name "*.c")
@@ -89,6 +86,14 @@ build_env() {
     echo "✅ $ENV_DIR build complete!"
 }
 
-build_env dev "$DEV_CFLAGS"
+TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
+
+DEV_DB_NAME="dev.db"
+DEV_ENV_DIR_START="build-dev_"
+DEV_ENV_DIR="build-dev_${TIMESTAMP}"
+build_env "$DEV_DB_NAME" "$DEV_ENV_DIR_START" "$DEV_ENV_DIR" "$DEV_CFLAGS"
+
+DEBUG_ENV_DIR_START="debug"
+build_env "$DEV_DB_NAME" "$DEBUG_ENV_DIR_START" "$DEBUG_ENV_DIR_START" "$DEV_CFLAGS"
 
 echo "🎉 All builds done!"

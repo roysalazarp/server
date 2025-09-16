@@ -200,9 +200,17 @@ void handler(void *arg) {
         assert(op_res == 1);
 
         op_res = SSL_accept(rctx.ssl);
-        assert(op_res > 0);
-
-        ark_fd_await(rctx.fd, 'r');
+        
+        if (op_res == 2) {
+            ark_fd_await(rctx.fd, 'r');
+        } 
+        
+        if (op_res <= 0) {
+            int err = SSL_get_error(rctx.ssl, op_res);
+            fprintf(stderr, "SSL_accept error %d\n", err);
+            ERR_print_errors_fp(stderr);
+            // assert(op_res > 0);
+        }
 
         rctx.raw_request = memory_alloc(rctx.memory, sizeof(char) * MAX_REQUEST_MSG_SIZE);
         ark_fd_read(rctx.ssl, rctx.fd, rctx.raw_request, MAX_REQUEST_MSG_SIZE);
