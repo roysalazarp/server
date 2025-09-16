@@ -96,7 +96,6 @@ ark_fd_write(SSL *ssl, int fd, void *buf, int n)
 	return tot;
 }
 
-
 void make_request(void *v) {
     ServerUri *server_uri = (ServerUri *)v;
 
@@ -195,21 +194,35 @@ void handler(void *arg) {
         ark_fd_await(rctx.fd, 'r');
         
         rctx.ssl = SSL_new(ctx);
+        if (!rctx.ssl) {
+            fprintf(stderr, "Failed to create SSL object\n");
+            ERR_print_errors_fp(stderr);
+            assert(0);
+        }
 
         op_res = SSL_set_fd(rctx.ssl, rctx.fd);
-        assert(op_res == 1);
-
-        op_res = SSL_accept(rctx.ssl);
-        
-        if (op_res == 2) {
-            ark_fd_await(rctx.fd, 'r');
-        } 
-        
-        if (op_res <= 0) {
-            int err = SSL_get_error(rctx.ssl, op_res);
-            fprintf(stderr, "SSL_accept error %d\n", err);
+        if (op_res != 1) {
+            fprintf(stderr, "Failed to attach socket to SSL\n");
             ERR_print_errors_fp(stderr);
-            // assert(op_res > 0);
+            assert(0);
+        }
+
+        try_ssl_accept_again:;
+        
+        op_res = SSL_accept(rctx.ssl);
+        if (op_res == 1) {
+            printf("handshake completed!\n");
+        } else {
+            int err = SSL_get_error(rctx.ssl, op_res);
+            if (err == SSL_ERROR_WANT_READ) {
+                ark_fd_await(rctx.fd, 'r');
+                printf("Trying SSL_accept again\n");
+                goto try_ssl_accept_again;
+            } else {
+                fprintf(stderr, "TLS/SSL handshake failed\n");
+                ERR_print_errors_fp(stderr);
+                assert(0);
+            }
         }
 
         rctx.raw_request = memory_alloc(rctx.memory, sizeof(char) * MAX_REQUEST_MSG_SIZE);
@@ -352,14 +365,17 @@ int main() {
     int fd;
     ark_setup_server(&fd, PORT);
 
-    SSL_library_init();
     SSL_load_error_strings();
     OpenSSL_add_all_algorithms();
 
     const SSL_METHOD *method = TLS_server_method();
 
     ctx = SSL_CTX_new(method);
-    assert(ctx != NULL);
+    if (!ctx) {
+        fprintf(stderr, "Failed to create SSL_CTX\n");
+        ERR_print_errors_fp(stderr);
+        assert(0);
+    }
 
     char ssl_path[1024];
     
@@ -369,7 +385,11 @@ int main() {
     full_path(ssl_path, 1024, ssl_certificate_relpath);
 
     op_res = SSL_CTX_use_certificate_file(ctx, ssl_path, SSL_FILETYPE_PEM);
-    assert(op_res > 0);
+    if (op_res <= 0) {
+        fprintf(stderr, "Failed to load certificate\n");
+        ERR_print_errors_fp(stderr);
+        assert(0);
+    }
 
     char ssl_privatekey_relpath[] = "../privkey.pem";
     
@@ -377,7 +397,11 @@ int main() {
     full_path(ssl_path, 1024, ssl_privatekey_relpath);
 
     op_res = SSL_CTX_use_PrivateKey_file(ctx, ssl_path, SSL_FILETYPE_PEM);
-    assert(op_res > 0);
+    if (op_res <= 0) {
+        fprintf(stderr, "Failed to load private key\n");
+        ERR_print_errors_fp(stderr);
+        assert(0);
+    }
 
     SSL_CTX_set_options(ctx, SSL_OP_IGNORE_UNEXPECTED_EOF);
 
