@@ -1338,7 +1338,7 @@ int compile_template(char *rendering, char **template_name_array, char **templat
 }
 
 int ark_get_compile_templates_lengths(uint32_t *compiled_templates_lengths, char **template_name_array, char **template_content_array, uint32_t template_count) {
-    Memory *memory = reserve_memory(PAGE_SIZE * 20);
+    Memory *memory = reserve_memory(PAGE_SIZE * 5);
     
     uint32_t i;
     

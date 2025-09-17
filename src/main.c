@@ -188,7 +188,7 @@ void handler(void *arg) {
         ark_fd_await(fd, 'r');
         
         RequestCtx rctx = {0};
-        rctx.memory = reserve_memory(PAGE_SIZE * 25);
+        rctx.memory = reserve_memory(PAGE_SIZE * 3);
         
         ark_client_accept(&rctx.fd, fd);
         ark_fd_await(rctx.fd, 'r');
@@ -218,11 +218,11 @@ void handler(void *arg) {
                 ark_fd_await(rctx.fd, 'r');
                 printf("Trying SSL_accept again\n");
                 goto try_ssl_accept_again;
-            } else {
-                fprintf(stderr, "TLS/SSL handshake failed\n");
-                ERR_print_errors_fp(stderr);
-                assert(0);
             }
+
+            fprintf(stderr, "TLS/SSL handshake failed\n");
+            ERR_print_errors_fp(stderr);
+            assert(0);
         }
 
         rctx.raw_request = memory_alloc(rctx.memory, sizeof(char) * MAX_REQUEST_MSG_SIZE);
@@ -244,19 +244,19 @@ void handler(void *arg) {
         }
         
         if (GET("/")) {
-            ark_task_create(home, &rctx, KB(32));
+            ark_task_create(home, &rctx, KB(15));
         } else if (GET("/login")) {
-            ark_task_create(login, &rctx, KB(32));
+            ark_task_create(login, &rctx, KB(15));
         } else if (POST("/logout")) {
-            ark_task_create(logout, &rctx, KB(32));
+            ark_task_create(logout, &rctx, KB(10));
         } else if (GET("/signup")) {
-            ark_task_create(signup, &rctx, KB(32));
+            ark_task_create(signup, &rctx, KB(15));
         } else if (POST("/login/create-session")) {
-            ark_task_create(login_create_session, &rctx, KB(32));
+            ark_task_create(login_create_session, &rctx, KB(15));
         } else if (POST("/signup/create-account")) {
-            ark_task_create(signup_create_account, &rctx, KB(32));
+            ark_task_create(signup_create_account, &rctx, KB(15));
         } else {
-            ark_task_create(not_found, &rctx, KB(8));
+            ark_task_create(not_found, &rctx, KB(10));
         }
 
         // if (strncmp(uri, "/a", uri_length) == 0 && uri_length == strlen("/a")) {
@@ -300,7 +300,7 @@ int main() {
     uint32_t num_of_filepaths = 0;
     ark_count_files(&num_of_filepaths, MYDIR);
     
-    Memory *memory = reserve_memory(PAGE_SIZE * 60);
+    Memory *memory = reserve_memory(PAGE_SIZE * 5);
     
     size_t *array_of_lengths = memory_alloc(memory, num_of_filepaths * sizeof(size_t));
     ark_list_file_sizes(array_of_lengths, num_of_filepaths, MYDIR);
