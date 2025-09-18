@@ -61,6 +61,8 @@ typedef struct {
 } Range;
 
 typedef struct {
+    uint32_t *ctx_name_lengths_arr;
+    char **ctx_name_arr;
     uint64_t *ctx_arr;
     uint32_t length;
 } TemplateRenderingCtxArr;
@@ -374,15 +376,30 @@ int main() {
     component_rendering_ctx_arr = memory_alloc(memory, component_arr_length * sizeof(TemplateRenderingCtxArr));
     for (i = 0; i < component_arr_length; i++) {
         component_rendering_ctx_arr[i].length = template_rendering_ctx_count[i];
-        component_rendering_ctx_arr[i].ctx_arr = memory_alloc(memory, template_rendering_ctx_count[i] * sizeof(Range));
+        component_rendering_ctx_arr[i].ctx_arr = memory_alloc(memory, template_rendering_ctx_count[i] * sizeof(uint64_t));
+        component_rendering_ctx_arr[i].ctx_name_lengths_arr = memory_alloc(memory, template_rendering_ctx_count[i] * sizeof(uint32_t));
+        component_rendering_ctx_arr[i].ctx_name_arr = memory_alloc(memory, template_rendering_ctx_count[i] * sizeof(char *));
     }
 
     for (i = 0; i < component_arr_length; i++) {
         char *component = component_content_arr[i];
         uint32_t component_length = strlen(component);
         
-        // LEFT OFF HERE! needs to count the name of each :for label value first then I can ark_make_single_template_rendering_ctx to give every :for a range
-        ark_make_single_template_rendering_ctx(component_rendering_ctx_arr[i].ctx_arr, component_rendering_ctx_arr[i].length, component, component_length);
+        ark_get_single_template_rendering_ctx_lengths_info(component_rendering_ctx_arr[i].ctx_name_lengths_arr, component_rendering_ctx_arr[i].length, component, component_length);
+    }
+
+    for (i = 0; i < component_arr_length; i++) {
+        uint32_t j;
+        for (j = 0; j < component_rendering_ctx_arr[i].length; j++) {
+            component_rendering_ctx_arr[i].ctx_name_arr[j] = memory_alloc(memory, component_rendering_ctx_arr[i].ctx_name_lengths_arr[j] + 1);
+        }
+    }
+    
+    for (i = 0; i < component_arr_length; i++) {
+        char *component = component_content_arr[i];
+        uint32_t component_length = strlen(component);
+        
+        ark_get_single_template_rendering_ctx(component_rendering_ctx_arr[i].ctx_name_arr, component_rendering_ctx_arr[i].ctx_arr, component_rendering_ctx_arr[i].length, component, component_length);
     }
 
     char db_relpath[] = "./dev.db";

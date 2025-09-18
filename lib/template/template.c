@@ -151,6 +151,20 @@ uint32_t find_bol(uint32_t pos, char *text) {
     return 0;
 }
 
+uint8_t strlen_u32(uint32_t x) {
+    unsigned char *bytes = (unsigned char *)&x;
+    uint8_t count = 0;
+
+    uint8_t i;
+    for (i = 0; i < sizeof(uint32_t); i++) {
+        if (bytes[i] != 0) {
+            count++;
+        }
+    }
+
+    return count;
+}
+
 uint8_t strlen_u64(uint64_t x) {
     unsigned char *bytes = (unsigned char *)&x;
     uint8_t count = 0;
@@ -1861,14 +1875,34 @@ int ark_count_template_rendering_ctx_amount(uint32_t *template_rendering_ctx_cou
     return 0;
 }
 
-// uint64_t low start high end
-int ark_make_single_template_rendering_ctx(uint64_t *range_arr, uint32_t range_arr_length, char *template_content, uint32_t template_content_length) {
+
+int ark_get_single_template_rendering_ctx_lengths_info(uint32_t *ctx_names_lengths, uint32_t ctx_arr_length, char *template_content, uint32_t template_content_length) {
     uint32_t cursor = 0;
+    
+    uint32_t count = 0;
 
     uint32_t x = *(uint32_t *)(template_content + cursor);
     for (;;) {
         if ((__builtin_bswap32(x) & MASK32_4) == FORLABEL) {
-            // to do, 
+            cursor += strlen_u32(FORLABEL); /* skip "for:" */
+
+            char c = template_content[cursor];
+            for (;;) {
+                if (c == '>' || (c == '/' && template_content[cursor + 1] == '>') || isspace(c)) {
+                    break;
+                }
+
+                if (cursor == template_content_length) {
+                    assert(0);
+                    return -1;
+                }
+
+                ctx_names_lengths[count]++;
+                cursor++;
+                c = template_content[cursor];
+            }
+            
+            count++;
         }
 
         if (cursor == template_content_length) {
@@ -1879,6 +1913,61 @@ int ark_make_single_template_rendering_ctx(uint64_t *range_arr, uint32_t range_a
         x = *(uint32_t *)(template_content + cursor);
     }
 
+    if (count != ctx_arr_length) {
+        assert(0);
+    }
+
     return 0;
 }
+
+int ark_get_single_template_rendering_ctx(char **ctx_names, uint64_t *ctx_arr, uint32_t ctx_arr_length, char *template_content, uint32_t template_content_length) {
+    // uint64_t *ctx_arr -> high 32bits for start, low 32bits for end
+
+    uint32_t cursor = 0;
+    
+    uint32_t count = 0;
+
+    uint32_t x = *(uint32_t *)(template_content + cursor);
+    for (;;) {
+        if ((__builtin_bswap32(x) & MASK32_4) == FORLABEL) {
+            cursor += strlen_u32(FORLABEL); /* skip "for:" */
+
+            char *name = &template_content[cursor];
+            uint32_t name_length = 0;
+
+            char c = template_content[cursor];
+            for (;;) {
+                if (c == '>' || (c == '/' && template_content[cursor + 1] == '>') || isspace(c)) {
+                    break;
+                }
+
+                if (cursor == template_content_length) {
+                    assert(0);
+                    return -1;
+                }
+
+                name_length++;
+                cursor++;
+                c = template_content[cursor];
+            }
+
+            memcpy(ctx_names[count], name, name_length);
+            count++;
+        }
+
+        if (cursor == template_content_length) {
+            break;
+        }
+        
+        cursor++;
+        x = *(uint32_t *)(template_content + cursor);
+    }
+
+    if (count != ctx_arr_length) {
+        assert(0);
+    }
+
+    return 0;
+}
+
 
