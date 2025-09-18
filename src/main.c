@@ -348,16 +348,12 @@ int main() {
     
     ark_get_compile_templates_lengths(compiled_templates_lengths, component_name_arr, template_content_array, component_arr_length);
     
-    printf("\n");
+    component_content_arr = memory_alloc(memory, component_arr_length * sizeof(char *));
+    for (i = 0; i < component_arr_length; i++) {
+        component_content_arr[i] = memory_alloc(memory, compiled_templates_lengths[i] + 1);
+    }
     
-    // component_content_arr = memory_alloc(memory, component_arr_length * sizeof(char *));
-    // for (i = 0; i < component_arr_length; i++) {
-    //     component_content_arr[i] = memory_alloc(memory, compiled_templates_lengths[i]);
-    // }
-    
-    // ark_compile_templates(component_content_arr, component_name_arr, template_content_array, component_arr_length);
-
-    return 0;
+    ark_compile_templates(component_content_arr, component_name_arr, template_content_array, component_arr_length);
 
     char db_relpath[] = "./dev.db";
     char db_path[1024];

@@ -113,10 +113,7 @@ typedef struct {
     TokenKind kind;
     struct {
         TagType type;
-        struct {
-            uint32_t start;
-            uint32_t end;
-        } markup;
+        Range markup;
     } tag;
 } Xtag;
 
@@ -726,6 +723,49 @@ int get_token(Token *next_token, char *html, uint32_t html_length, uint32_t *cur
     return 0;
 }
 
+int find_tag_label_value(uint32_t *value_start, uint32_t *value_length, uint64_t key, char *html, uint32_t start_location, uint32_t html_length) {
+    uint32_t cursor = start_location;
+
+    *value_length = 0;
+    
+    uint64_t tk = *(uint64_t *)(html + cursor);
+    for (;;) {
+        if ((__builtin_bswap64(tk) & MASK64_5) == key) {                                
+            cursor += strlen_u64(key); /* skip key */
+            
+            *value_start = cursor;
+
+            char c = html[cursor];
+            for (;;) {
+                if (c == '>' || (c == '/' && html[cursor + 1] == '>') || isspace(c)) {
+                    break;
+                }
+
+                if (cursor == html_length) {
+                    assert(0);
+                    return -1;
+                }
+
+                (*value_length)++;
+                cursor++;
+                c = html[cursor];
+            }
+            
+            break;
+        }
+        
+        if (cursor == html_length) {
+            assert(0);
+            return -1;
+        }
+
+        cursor++;
+        tk = *(uint64_t *)(html + cursor);
+    }
+
+    return 0;
+}
+
 int ark_get_templates_info(uint32_t *templates_names_lengths, uint32_t *templates_lengths, uint32_t template_count, uint32_t *html_file_mask, char **array_of_filepaths, char **file_content_array, uint32_t array_length) {
     uint32_t i;
     
@@ -756,38 +796,13 @@ int ark_get_templates_info(uint32_t *templates_names_lengths, uint32_t *template
                 case TOKEN_XDEF: {
                     if (t.tag.type == TAG_OPENING) {
                         uint32_t cursor = t.tag.markup.start + 6 ;// skip 6 chars for "<x-def"
+
+                        uint32_t value_start = 0;
+                        uint32_t value_length = 0;
+                        uint64_t key = NAMEATTRKEY;
+                        find_tag_label_value(&value_start, &value_length, key, lexer.file_content.data, cursor, lexer.file_content.length);
                         
-                        uint64_t tk = *(uint64_t *)(lexer.file_content.data + cursor);
-                        for (;;) {
-                            if ((__builtin_bswap64(tk) & MASK64_5) == NAMEATTRKEY) {                                
-                                cursor += 5; /* skip "name:" */
-                                char c = lexer.file_content.data[cursor];
-                                for (;;) {
-                                    if (c == '>' || isspace(c)) {
-                                        break;
-                                    }
-
-                                    if (cursor == lexer.file_content.length) {
-                                        assert(0);
-                                        return -1;
-                                    }
-
-                                    templates_names_lengths[count]++;
-                                    cursor++;
-                                    c = lexer.file_content.data[cursor];
-                                }
-                                
-                                break;
-                            }
-                            
-                            if (cursor == lexer.file_content.length) {
-                                assert(0);
-                                return -1;
-                            }
-
-                            cursor++;
-                            tk = *(uint64_t *)(lexer.file_content.data + cursor);
-                        }
+                        templates_names_lengths[count] = value_length;
 
                         start = lexer.file_content.data + t.tag.markup.end;
 
@@ -854,42 +869,13 @@ int ark_make_templates_array(char **template_name_array, char **template_content
                 case TOKEN_XDEF: {
                     if (t.tag.type == TAG_OPENING) {
                         uint32_t cursor = t.tag.markup.start + 6 ;// skip 6 chars for "<x-def"
+
+                        uint32_t value_start = 0;
+                        uint32_t value_length = 0;
+                        uint64_t key = NAMEATTRKEY;
+                        find_tag_label_value(&value_start, &value_length, key, lexer.file_content.data, cursor, lexer.file_content.length);
                         
-                        uint64_t tk = *(uint64_t *)(lexer.file_content.data + cursor);
-                        for (;;) {
-                            if ((__builtin_bswap64(tk) & MASK64_5) == NAMEATTRKEY) {                                
-                                cursor += 5; /* skip "name:" */
-                                
-                                uint32_t name_i = 0;
-
-                                char c = lexer.file_content.data[cursor];
-                                for (;;) {
-                                    if (c == '>' || isspace(c)) {
-                                        break;
-                                    }
-
-                                    if (cursor == lexer.file_content.length) {
-                                        assert(0);
-                                        return -1;
-                                    }
-
-                                    template_name_array[count][name_i] = c;
-                                    name_i++;
-                                    cursor++;
-                                    c = lexer.file_content.data[cursor];
-                                }
-                                
-                                break;
-                            }
-                            
-                            if (cursor == lexer.file_content.length) {
-                                assert(0);
-                                return -1;
-                            }
-
-                            cursor++;
-                            tk = *(uint64_t *)(lexer.file_content.data + cursor);
-                        }
+                        memcpy(template_name_array[count], lexer.file_content.data + value_start, value_length);
 
                         start = lexer.file_content.data + t.tag.markup.end;
 
@@ -1313,7 +1299,209 @@ int ark_validate_templates_old(uint32_t *html_file_mask, char **array_of_filepat
 }
 
 int compile_template(char *rendering, char **template_name_array, char **template_content_array, uint32_t template_count) {
-    // LEFT OF HERE!
+    Lexer lexer = {0};
+    lexer.file_content.data = rendering;
+    lexer.cursor = 0;
+
+    uint8_t xfill_open_tags_count = 0;
+    uint32_t saved_location = 0;
+
+    String import = {0};
+    uint32_t import_cursor = 0;
+
+    go_again:;
+    boolean repeat = false;
+
+    while (lexer.file_content.data[lexer.cursor]) {
+        Xtag t = {0};
+        get_xtag(&t, lexer.file_content.data, lexer.file_content.length, &lexer.cursor);
+
+        if (t.kind == TOKEN_XUSE) {
+            repeat = true;
+        }
+
+        switch (t.kind) {
+            case TOKEN_XUSE: {
+                if (xfill_open_tags_count) break;
+                switch (t.tag.type) {
+                    case TAG_OPENING: {
+                        uint32_t cursor = t.tag.markup.start + 6 ;// skip 6 chars for "<x-use"
+
+                        uint32_t name_value_start = 0;
+                        uint32_t name_value_length = 0;
+                        uint64_t key = NAMEATTRKEY;
+                        find_tag_label_value(&name_value_start, &name_value_length, key, lexer.file_content.data, cursor, lexer.file_content.length);
+
+                        uint32_t j;
+                        for (j = 0; j < template_count; j++) {
+                            char *name = template_name_array[j];
+                            uint32_t name_length = strlen(name);
+                            
+                            if (strncmp(name, lexer.file_content.data + name_value_start, name_value_length) == 0 && name_length == name_value_length) {
+                                import.data = template_content_array[j];
+                                import.length = strlen(template_content_array[j]);
+                                break;
+                            }
+                        }
+                        
+                        Range opening_tag_markup = t.tag.markup;
+
+                        saved_location = opening_tag_markup.start;
+                            
+                        char *dest = lexer.file_content.data + opening_tag_markup.start;
+                        char *src = lexer.file_content.data + opening_tag_markup.end;
+                        size_t chunk_length = strlen(src) + 1;
+                        memmove(dest, src, chunk_length);
+
+                        lexer.cursor = opening_tag_markup.start;
+                        
+                        break;
+                    }
+                    case TAG_CLOSING: {
+                        Range closing_tag_markup = t.tag.markup;
+                    
+                        char *insert_location = lexer.file_content.data + closing_tag_markup.start;
+                        
+                        size_t substring_to_remove_length = closing_tag_markup.end - closing_tag_markup.start;
+
+                        char *substring_to_insert = import.data + import_cursor;
+                        size_t substring_to_insert_length = import.length - import_cursor;
+
+                        /** Expand/Shrink space where new substring will inserted so it fits perfectly */
+                        char *dest = insert_location + substring_to_insert_length;
+                        char *src = insert_location + substring_to_remove_length;
+                        size_t chunk_length = strlen(lexer.file_content.data + closing_tag_markup.end) + 1;
+                        memmove(dest, src, chunk_length);
+
+                        memcpy(insert_location, substring_to_insert, substring_to_insert_length);
+                        
+                        lexer.cursor = saved_location;
+                        
+                        bzero(&import, sizeof(String));
+                        import_cursor = 0;
+                        saved_location = 0;
+                        
+                        break;
+                    }
+                    case TAG_SELFCLOSING: {
+                        uint32_t cursor = t.tag.markup.start + 6 ;// skip 6 chars for "<x-use"
+
+                        uint32_t name_value_start = 0;
+                        uint32_t name_value_length = 0;
+                        uint64_t key = NAMEATTRKEY;
+                        find_tag_label_value(&name_value_start, &name_value_length, key, lexer.file_content.data, cursor, lexer.file_content.length);
+
+                        String to_import = {0};
+
+                        uint32_t j;
+                        for (j = 0; j < template_count; j++) {
+                            char *name = template_name_array[j];
+                            uint32_t name_length = strlen(name);
+                            
+                            if (strncmp(name, lexer.file_content.data + name_value_start, name_value_length) == 0 && name_length == name_value_length) {
+                                to_import.data = template_content_array[j];
+                                to_import.length = strlen(template_content_array[j]);
+                                break;
+                            }
+                        }
+
+                        Range tag_markup = t.tag.markup;
+
+                        char *insert_location = lexer.file_content.data + tag_markup.start;
+                        
+                        size_t substring_to_remove_length = tag_markup.end - tag_markup.start;
+
+                        char *substring_to_insert = to_import.data;
+                        size_t substring_to_insert_length = to_import.length;
+
+                        /** Expand/Shrink space where new substring will inserted so it fits perfectly */
+                        char *dest = insert_location + substring_to_insert_length;
+                        char *src = insert_location + substring_to_remove_length;
+                        size_t chunk_length = strlen(lexer.file_content.data + tag_markup.end) + 1;
+                        memmove(dest, src, chunk_length);
+
+                        memcpy(insert_location, substring_to_insert, substring_to_insert_length);
+
+                        lexer.cursor = tag_markup.start; // the newly imported component may have components to import, so let's go back
+                    }
+                    default: {
+                        break;
+                    }
+                }
+                break;
+            }
+            case TOKEN_XFILL: {
+                switch (t.tag.type) {
+                    case TAG_OPENING: {
+                        if (xfill_open_tags_count == 0) {
+                            Range opening_tag_markup = t.tag.markup;
+                    
+                            char *insert_location = lexer.file_content.data + opening_tag_markup.start;
+                            
+                            size_t substring_to_remove_length = opening_tag_markup.end - opening_tag_markup.start;
+
+                            char *substring_to_insert = (import.data + import_cursor);
+                            String xslot_selfclosing_tag = {0};
+                            get_next_tag(&xslot_selfclosing_tag, (import.data + import_cursor), XSLOT, TAG_SELFCLOSING);
+                            size_t substring_to_insert_length = xslot_selfclosing_tag.data - substring_to_insert;
+
+                            import_cursor += substring_to_insert_length + xslot_selfclosing_tag.length;
+
+                            /* Expand/Shrink space where new substring will inserted so it fits perfectly */
+                            char *dest = insert_location + substring_to_insert_length;
+                            char *src = insert_location + substring_to_remove_length;
+                            size_t chunk_length = strlen(lexer.file_content.data + opening_tag_markup.end) + 1;
+                            memmove(dest, src, chunk_length);
+
+                            memcpy(insert_location, substring_to_insert, substring_to_insert_length);
+
+                            saved_location = (insert_location + substring_to_insert_length) - lexer.file_content.data;
+                            lexer.cursor = saved_location;
+                        }
+
+                        xfill_open_tags_count++;
+                        
+                        break;
+                    }
+                    case TAG_CLOSING: {
+                        xfill_open_tags_count--;
+
+                        if (xfill_open_tags_count == 0) {
+                            Range closing_tag_markup = t.tag.markup;
+
+                            char *dest = lexer.file_content.data + closing_tag_markup.start;
+                            char *src = lexer.file_content.data + closing_tag_markup.end;
+                            size_t chunk_length = strlen(src) + 1;
+                            memmove(dest, src, chunk_length);
+
+                            lexer.cursor -= 1;
+                        }
+                        
+                        break;
+                    }
+                    default: {
+                        break;
+                    }
+                }
+                break;
+            }
+            default: {
+                break;
+            }
+        }
+        
+        lexer.cursor++;
+    }
+
+    if (repeat) {
+        lexer.cursor = 0;
+        xfill_open_tags_count = 0;
+        
+        goto go_again;
+    }
+
+    rendering[lexer.cursor] = '\0';
+    
     return 0;
 }
 
@@ -1612,7 +1800,7 @@ int ark_get_compile_templates_lengths(uint32_t *compiled_templates_lengths, char
         uint32_t length = strlen(rendering);
         UNLOCK_MEMORY(memory, rendering + length + 1);
 
-        compiled_templates_lengths[i] = strlen(rendering) + 1;
+        compiled_templates_lengths[i] = strlen(rendering);
 
         memory_reset(memory, (uint8_t *)rendering);
     }
