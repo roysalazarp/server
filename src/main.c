@@ -55,8 +55,20 @@ typedef struct {
     Channel *done;
 } ServerUri;
 
+typedef struct {
+    uint32_t start;
+    uint32_t end;
+} Range;
+
+typedef struct {
+    uint64_t *ctx_arr;
+    uint32_t length;
+} TemplateRenderingCtxArr;
+
 char **component_name_arr;
 char **component_content_arr;
+TemplateRenderingCtxArr *component_rendering_ctx_arr;
+
 uint32_t component_arr_length;
 sqlite3 *db;
 
@@ -292,7 +304,7 @@ int main() {
     uint32_t num_of_filepaths = 0;
     ark_count_files(&num_of_filepaths, MYDIR);
     
-    Memory *memory = reserve_memory(PAGE_SIZE * 8);
+    Memory *memory = reserve_memory(PAGE_SIZE * 12);
     
     size_t *array_of_lengths = memory_alloc(memory, num_of_filepaths * sizeof(size_t));
     ark_list_file_sizes(array_of_lengths, num_of_filepaths, MYDIR);
@@ -354,6 +366,24 @@ int main() {
     }
     
     ark_compile_templates(component_content_arr, component_name_arr, template_content_array, component_arr_length);
+
+    uint32_t *template_rendering_ctx_count = memory_alloc(memory, component_arr_length * sizeof(uint32_t));
+
+    ark_count_template_rendering_ctx_amount(template_rendering_ctx_count, component_content_arr, component_arr_length);
+
+    component_rendering_ctx_arr = memory_alloc(memory, component_arr_length * sizeof(TemplateRenderingCtxArr));
+    for (i = 0; i < component_arr_length; i++) {
+        component_rendering_ctx_arr[i].length = template_rendering_ctx_count[i];
+        component_rendering_ctx_arr[i].ctx_arr = memory_alloc(memory, template_rendering_ctx_count[i] * sizeof(Range));
+    }
+
+    for (i = 0; i < component_arr_length; i++) {
+        char *component = component_content_arr[i];
+        uint32_t component_length = strlen(component);
+        
+        // LEFT OFF HERE! needs to count the name of each :for label value first then I can ark_make_single_template_rendering_ctx to give every :for a range
+        ark_make_single_template_rendering_ctx(component_rendering_ctx_arr[i].ctx_arr, component_rendering_ctx_arr[i].length, component, component_length);
+    }
 
     char db_relpath[] = "./dev.db";
     char db_path[1024];

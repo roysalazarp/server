@@ -41,7 +41,8 @@ const char html_attr_key_token[256] = {
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  /* 0xf0 */
 };
 
-#define NAMEATTRKEY     0x6E616D653A000000 /* "name:" */
+#define NAMELABEL       0x6E616D653A000000 /* "name:" */
+#define FORLABEL        0x666F723A /* "for:" */
 
 #define XOPEN           0x3C782D00 /* "<x-"  */ 
 #define XCLOSE          0x3C2F782D /* "</x-"  */ 
@@ -550,7 +551,7 @@ int locate_tag_name_attr(uint32_t *name_attr_index, AttrsArray *attrs_array) {
     for (i = 0; i < attrs_array->count; i++) {
 
         uint32_t attr_key = *(uint32_t *)(attrs_array->attr[i].name.data);
-        // if ((__builtin_bswap32(attr_key) & MASK32_4) == NAMEATTRKEY && attrs_array->attr[i].name.length == 4) {
+        // if ((__builtin_bswap32(attr_key) & MASK32_4) == NAMELABEL && attrs_array->attr[i].name.length == 4) {
         //     *name_attr_index = i;
         //     return 0;
         // }
@@ -799,7 +800,7 @@ int ark_get_templates_info(uint32_t *templates_names_lengths, uint32_t *template
 
                         uint32_t value_start = 0;
                         uint32_t value_length = 0;
-                        uint64_t key = NAMEATTRKEY;
+                        uint64_t key = NAMELABEL;
                         find_tag_label_value(&value_start, &value_length, key, lexer.file_content.data, cursor, lexer.file_content.length);
                         
                         templates_names_lengths[count] = value_length;
@@ -872,7 +873,7 @@ int ark_make_templates_array(char **template_name_array, char **template_content
 
                         uint32_t value_start = 0;
                         uint32_t value_length = 0;
-                        uint64_t key = NAMEATTRKEY;
+                        uint64_t key = NAMELABEL;
                         find_tag_label_value(&value_start, &value_length, key, lexer.file_content.data, cursor, lexer.file_content.length);
                         
                         memcpy(template_name_array[count], lexer.file_content.data + value_start, value_length);
@@ -1329,7 +1330,7 @@ int compile_template(char *rendering, char **template_name_array, char **templat
 
                         uint32_t name_value_start = 0;
                         uint32_t name_value_length = 0;
-                        uint64_t key = NAMEATTRKEY;
+                        uint64_t key = NAMELABEL;
                         find_tag_label_value(&name_value_start, &name_value_length, key, lexer.file_content.data, cursor, lexer.file_content.length);
 
                         uint32_t j;
@@ -1388,7 +1389,7 @@ int compile_template(char *rendering, char **template_name_array, char **templat
 
                         uint32_t name_value_start = 0;
                         uint32_t name_value_length = 0;
-                        uint64_t key = NAMEATTRKEY;
+                        uint64_t key = NAMELABEL;
                         find_tag_label_value(&name_value_start, &name_value_length, key, lexer.file_content.data, cursor, lexer.file_content.length);
 
                         String to_import = {0};
@@ -1819,3 +1820,65 @@ int ark_compile_templates(char **compiled_template_content_array, char **templat
 
     return 0;
 }
+
+/*
+
+LEFT OFF HERE!
+
+count the amount of :for and for each for have a Range (start, end), for rendering you 
+pick the for you want to render in the order you want and when rendering that for if you are 
+rendering the amount of iterations the renderer basically multiplies the code section by the 
+amount of times you want, if you are rendering the repleaceable from a for the renderer
+will take care of understanding when its out of the current for scope and when its inside so 
+it doesnt render a repleaceable outside if the current for scope. So we are not really using
+a tree but a array.
+
+*/
+
+int ark_count_template_rendering_ctx_amount(uint32_t *template_rendering_ctx_count, char **template_content_array, uint32_t template_count) {
+    uint32_t i;
+    for (i = 0; i < template_count; i++) {
+        uint32_t cursor = 0;
+
+        char *component = template_content_array[i];
+        uint32_t component_length = strlen(component);
+        
+        uint32_t x = *(uint32_t *)(component + cursor);
+        for (;;) {
+            if ((__builtin_bswap32(x) & MASK32_4) == FORLABEL) {
+                template_rendering_ctx_count[i] += 1;
+            }
+
+            if (cursor == component_length) {
+                break;
+            }
+            
+            cursor++;
+            x = *(uint32_t *)(component + cursor);
+        }
+    }
+
+    return 0;
+}
+
+// uint64_t low start high end
+int ark_make_single_template_rendering_ctx(uint64_t *range_arr, uint32_t range_arr_length, char *template_content, uint32_t template_content_length) {
+    uint32_t cursor = 0;
+
+    uint32_t x = *(uint32_t *)(template_content + cursor);
+    for (;;) {
+        if ((__builtin_bswap32(x) & MASK32_4) == FORLABEL) {
+            // to do, 
+        }
+
+        if (cursor == template_content_length) {
+            break;
+        }
+        
+        cursor++;
+        x = *(uint32_t *)(template_content + cursor);
+    }
+
+    return 0;
+}
+

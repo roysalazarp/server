@@ -11,6 +11,8 @@ int ark_get_compile_templates_lengths(uint32_t *compiled_templates_lengths, char
 int ark_compile_templates(char **compiled_template_content_array, char **template_name_array, char **template_content_array, uint32_t template_count);
 int ark_get_templates_info(uint32_t *names_lengths, uint32_t *templates_lengths, uint32_t template_count, uint32_t *html_file_mask, char **array_of_filepaths, char **file_content_array, uint32_t array_length);
 int ark_make_templates_array(char **template_name_array, char **template_content_array, uint32_t template_count, uint32_t *html_file_mask, char **array_of_filepaths, char **file_content_array, uint32_t array_length);
+int ark_count_template_rendering_ctx_amount(uint32_t *template_rendering_ctx_count, char **template_content_array, uint32_t template_count);
+int ark_make_single_template_rendering_ctx(uint64_t *range_arr, uint32_t range_arr_length, char *template_content, uint32_t template_content_length);
 
 #endif /* ARK_TEMPLATE_H */
 
