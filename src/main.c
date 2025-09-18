@@ -284,23 +284,15 @@ int full_path(char *buffer, uint32_t buffer_size, char *relative_path) {
 }
 
 int main() {
-    int op_res;
     setbuf(stdout, NULL);
-
-    char db_relpath[] = "./dev.db";
-    char db_path[1024];
-    bzero(db_path, 1024);
-    full_path(db_path, 1024, db_relpath);
-
-    op_res = sqlite3_open(db_path, &db);
-    assert(op_res == SQLITE_OK);
-
+    
     uint32_t i;
+    int op_res;
     
     uint32_t num_of_filepaths = 0;
     ark_count_files(&num_of_filepaths, MYDIR);
     
-    Memory *memory = reserve_memory(PAGE_SIZE * 5);
+    Memory *memory = reserve_memory(PAGE_SIZE * 8);
     
     size_t *array_of_lengths = memory_alloc(memory, num_of_filepaths * sizeof(size_t));
     ark_list_file_sizes(array_of_lengths, num_of_filepaths, MYDIR);
@@ -335,9 +327,9 @@ int main() {
     ark_make_html_file_mask(html_file_mask, array_of_filepaths, num_of_filepaths);
     
     ark_validate_templates(html_file_mask, array_of_filepaths, array_of_file_contents, num_of_filepaths);
-    
-    ark_templates_count(&component_arr_length, html_file_mask, array_of_filepaths, array_of_file_contents, num_of_filepaths);
 
+    ark_templates_count(&component_arr_length, html_file_mask, array_of_filepaths, array_of_file_contents, num_of_filepaths);
+    
     uint32_t *names_lengths = memory_alloc(memory, component_arr_length * sizeof(uint32_t *));
     uint32_t *templates_lengths = memory_alloc(memory, component_arr_length * sizeof(uint32_t *));
     
@@ -346,21 +338,34 @@ int main() {
     component_name_arr = memory_alloc(memory, component_arr_length * sizeof(char *));
     char **template_content_array = memory_alloc(memory, component_arr_length * sizeof(char *));
     for (i = 0; i < component_arr_length; i++) {
-        component_name_arr[i] = memory_alloc(memory, names_lengths[i]);
-        template_content_array[i] = memory_alloc(memory, templates_lengths[i]);
+        component_name_arr[i] = memory_alloc(memory, names_lengths[i] + 1);
+        template_content_array[i] = memory_alloc(memory, templates_lengths[i] + 1);
     }
-    
-    ark_make_templates_array(component_name_arr, template_content_array, component_arr_length, html_file_mask, array_of_filepaths, array_of_file_contents, num_of_filepaths);
 
+    ark_make_templates_array(component_name_arr, template_content_array, component_arr_length, html_file_mask, array_of_filepaths, array_of_file_contents, num_of_filepaths);
+    
     uint32_t *compiled_templates_lengths = memory_alloc(memory, component_arr_length * sizeof(uint32_t *));
+    
     ark_get_compile_templates_lengths(compiled_templates_lengths, component_name_arr, template_content_array, component_arr_length);
     
-    component_content_arr = memory_alloc(memory, component_arr_length * sizeof(char *));
-    for (i = 0; i < component_arr_length; i++) {
-        component_content_arr[i] = memory_alloc(memory, compiled_templates_lengths[i]);
-    }
+    printf("\n");
     
-    ark_compile_templates(component_content_arr, component_name_arr, template_content_array, component_arr_length);
+    // component_content_arr = memory_alloc(memory, component_arr_length * sizeof(char *));
+    // for (i = 0; i < component_arr_length; i++) {
+    //     component_content_arr[i] = memory_alloc(memory, compiled_templates_lengths[i]);
+    // }
+    
+    // ark_compile_templates(component_content_arr, component_name_arr, template_content_array, component_arr_length);
+
+    return 0;
+
+    char db_relpath[] = "./dev.db";
+    char db_path[1024];
+    bzero(db_path, 1024);
+    full_path(db_path, 1024, db_relpath);
+
+    op_res = sqlite3_open(db_path, &db);
+    assert(op_res == SQLITE_OK);
     
     int fd;
     ark_setup_server(&fd, PORT);

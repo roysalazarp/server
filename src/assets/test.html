@@ -1,0 +1,89 @@
+<x-def name:foo>
+    <hhr class="foo">
+        <div>
+            <h1>
+                {{ age }}
+            </h1>
+            <div>
+                <table for:tables if:show_tables>
+                    <tr>
+                        <th for:col_names>
+                            {{ col_name }}
+                        </th>
+                    </tr>
+                    <tr for:rows>
+                        <td for:cells>
+                            {{ cell }}
+                        </td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+        <ak>
+            <x-use name:boo/>
+        </ak>
+        <x-use name:layout>
+            <x-fill>
+                <h1>Foo</h1>
+                <ng>
+                    <x-use name:bar>
+                        <x-fill>John</x-fill>
+                        <x-fill>Doe</x-fill>
+                        <x-fill>smith</x-fill>
+                    </x-use>
+                </ng>
+            </x-fill>
+            <x-fill>
+                <gh>skdklas</gh>
+            </x-fill>
+            <x-fill>33</x-fill>
+        </x-use>
+    </hhr>
+</x-def>
+
+<x-def name:layout>
+    <xo class="layout">
+        <x-slot />
+        <po>
+            <x-slot />
+            <div>
+                <x-slot />
+            </div>
+        </po>
+    </xo>
+</x-def>
+
+<x-def name:bar>
+    <body class="bar">
+        <h2>
+            <x-slot />
+        </h2>
+        <div>
+            <x-use name:baz>
+                <x-fill>
+                    <div>hahah</div>
+                    <x-slot />
+                </x-fill>
+            </x-use>
+        </div>
+    </body>
+    <div>
+        <x-slot />
+    </div>
+</x-def>
+
+<x-def name:baz>
+    <section class="baz">
+        <div>
+            <x-slot />
+        </div>
+    </section>
+</x-def>
+
+<x-def name:boo>
+    <section class="boo">
+        <div>
+            boo!
+        </div>
+    </section>
+</x-def>
