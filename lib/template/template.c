@@ -1920,6 +1920,113 @@ int ark_get_single_template_rendering_ctx_lengths_info(uint32_t *ctx_names_lengt
     return 0;
 }
 
+int get_html_context_end(uint32_t *end, uint32_t start, char *html, uint32_t html_length) {
+    if (html[start] != '<') assert(0);
+    if (html[start + 1] == '/') assert(0 && "You must give an opening or selfclosing tag, not a closing tag");
+
+    uint32_t cursor = start + 1;
+
+    char *name = &html[cursor];
+    uint32_t name_length = 0;
+
+    char c;
+
+    c = html[cursor];
+    for (;;) {
+        if (c == '>' || (c == '/' && html[cursor + 1] == '>') || isspace(c)) {
+            break;
+        }
+
+        if (cursor == html_length) {
+            assert(0);
+            return -1;
+        }
+
+        name_length++;
+        cursor++;
+        c = html[cursor];
+    }
+
+    c = html[cursor];
+    char prev = 0;
+    for (;;) {
+        if (c == '>') {
+            if (prev == '/') {
+                *end = cursor;
+                return 0;
+            }
+
+            break;
+        }
+
+        if (cursor == html_length) {
+            assert(0);
+            return -1;
+        }
+
+        prev = c;
+        cursor++;
+        c = html[cursor];
+    }
+
+    uint32_t open_length = sizeof((char) '<') + name_length;
+    char *open = malloc(open_length + 1);
+    snprintf(open, open_length + 1, "<%s", name);
+    open[open_length] = '\0';
+
+    uint32_t close_length = sizeof((char) '<') + sizeof((char) '/') + name_length;
+    char *close = malloc(close_length + 1);
+    snprintf(close, close_length + 1, "</%s", name);
+    close[close_length] = '\0';
+
+    uint32_t open_of_the_same_type = 0;
+
+    char *p = &html[cursor];
+    for (;;) {
+        if (strncmp(p, open, open_length) == 0) {
+            open_of_the_same_type++;
+        }
+
+        if (strncmp(p, close, close_length) == 0) {   
+            if (open_of_the_same_type) {
+                open_of_the_same_type--;
+            } else {
+                cursor += close_length;
+                
+                c = html[cursor];
+                for (;;) {
+                    if (c == '>') {
+                        break;
+                    }
+
+                    if (cursor == html_length) {
+                        assert(0);
+                        return -1;
+                    }
+                    
+                    cursor++;
+                    c = html[cursor];
+                }
+
+                cursor++; /** pass '>' */
+
+                *end = cursor;
+                return 0;
+            }
+        }
+
+        if (cursor == html_length) {
+            assert(0);
+            return -1;
+        }
+
+        cursor++;
+        p = &html[cursor];
+    }
+    
+    return -1;
+}
+
 int ark_get_single_template_rendering_ctx(char **ctx_names, uint64_t *ctx_arr, uint32_t ctx_arr_length, char *template_content, uint32_t template_content_length) {
     // uint64_t *ctx_arr -> high 32bits for start, low 32bits for end
 
@@ -1932,10 +2039,34 @@ int ark_get_single_template_rendering_ctx(char **ctx_names, uint64_t *ctx_arr, u
         if ((__builtin_bswap32(x) & MASK32_4) == FORLABEL) {
             cursor += strlen_u32(FORLABEL); /* skip "for:" */
 
+            char c;
+            
+            uint32_t tmp = cursor;
+
+            c = template_content[tmp];
+            for (;;) {
+                if (c == '<') {
+                    break;
+                }
+
+                if (tmp == 0) {
+                    assert(0);
+                    return -1;
+                }
+
+                tmp--;
+                c = template_content[tmp];
+            }
+
+            ctx_arr[count] = (uint64_t)tmp << 32;
+            uint32_t end = 0;
+            get_html_context_end(&end, tmp, template_content, template_content_length);
+            ctx_arr[count] |= end;
+
             char *name = &template_content[cursor];
             uint32_t name_length = 0;
 
-            char c = template_content[cursor];
+            c = template_content[cursor];
             for (;;) {
                 if (c == '>' || (c == '/' && template_content[cursor + 1] == '>') || isspace(c)) {
                     break;

@@ -8,7 +8,7 @@
             "program": "${workspaceFolder}/debug/tilastorage",
             "args": [],
             "stopAtEntry": false,
-            "cwd": "${workspaceFolder}/src/",
+            "cwd": "${workspaceFolder}/debug/",
             "environment": [
                 {
                     "name": "LD_LIBRARY_PATH",
