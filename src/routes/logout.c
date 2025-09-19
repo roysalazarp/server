@@ -2,14 +2,16 @@
 
 #include "ark/utils.h"
 
+#include "helpers.h"
 #include "routes.h"
 #include "../globals.h"
 
 void logout(void *v)  {
+    char err[ERR_SIZE] = {0};
     RequestCtx *rctx = (RequestCtx *)v;
 
     int user_id = 0;
-    is_authenticated(&user_id, rctx);
+    is_authenticated(err, &user_id, rctx);
 
     if (user_id) {
         const char *sql = "DELETE FROM sessions WHERE user_id = ?;";

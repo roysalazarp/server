@@ -7,7 +7,7 @@
 #define COOKIE_KEY 1
 #define COOKIE_VALUE 2
 
-int cookie_count(uint32_t *count, char *cookies, uint32_t cookies_length) {
+int cookie_count(char *err, uint32_t *count, char *cookies, uint32_t cookies_length) {
     if (cookies_length) {
         // we can assume there is at least one cookie
         *count += 1;

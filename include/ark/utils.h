@@ -31,6 +31,29 @@
         }                                                                               \
     } while (0)
 
+#define ERR_SIZE 255
+
+#define PROPAGATE_ERR(expr, ...)                                                    \
+    do {                                                                            \
+        if (expr == -1) {                                                           \
+            if (sizeof(#__VA_ARGS__) > 1 && strcmp(#__VA_ARGS__, "\"\"") != 0) {    \
+                snprintf(err, ERR_SIZE, __VA_ARGS__);                               \
+            }                                                                       \
+            return -1;                                                              \
+        }                                                                           \
+    } while (0)
+
+
+#define CHECK_ERR(expr, ...)                                                        \
+    do {                                                                            \
+        if (!(expr)) {                                                              \
+            if (sizeof(#__VA_ARGS__) > 1 && strcmp(#__VA_ARGS__, "\"\"") != 0) {    \
+                snprintf(err, ERR_SIZE, __VA_ARGS__);                               \
+            }                                                                       \
+            return -1;                                                              \
+        }                                                                           \
+    } while (0)
+
 void bzero(void *p, size_t n);
 static void print_source_line(const char *file, int line_offset);
 unsigned long available_ram();

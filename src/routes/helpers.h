@@ -3,6 +3,6 @@
 
 #include "routes.h"
 
-int is_authenticated(int *user_id, RequestCtx *rctx);
+int is_authenticated(char *err, int *user_id, RequestCtx *rctx);
 
 #endif /* HELPERS_H */

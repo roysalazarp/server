@@ -3,6 +3,7 @@
 
 #include "ark/http.h"
 #include "ark/cookies.h"
+#include "ark/utils.h"
 
 #include "helpers.h"
 #include "../globals.h"
@@ -11,10 +12,19 @@
 #define HeaderData(H)   (request + msg->headers[H].a)
 #define HeaderLength(H) (msg->headers[H].b - msg->headers[H].a)
 
-int is_authenticated(int *user_id, RequestCtx *rctx) {
+int some_other_func(char *err, int n) {
+    CHECK_ERR(n == 7, "some errr");
+    
+    return 0;
+}
+
+int is_authenticated(char *err, int *user_id, RequestCtx *rctx) {
     char *request = rctx->raw_request;
     struct HttpMessage *msg = rctx->msg;
     Memory *memory = rctx->memory;
+
+    int n;
+    PROPAGATE_ERR(some_other_func(err, n), "");
     
     char *cookie = NULL;
     if (HasHeader(kHttpCookie)) {
@@ -22,7 +32,7 @@ int is_authenticated(int *user_id, RequestCtx *rctx) {
         uint32_t cookies_length = HeaderLength(kHttpCookie);
 
         uint32_t count = 0;
-        cookie_count(&count, cookies, cookies_length);
+        cookie_count(err, &count, cookies, cookies_length);
 
         Cookies parsed_cookies = {0};
         parsed_cookies.p = memory_alloc(memory, count * sizeof(Cookie));

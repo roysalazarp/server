@@ -12,14 +12,14 @@ DEV_CFLAGS="-g -DDEBUG=1 -Wall -Wextra -Werror \
     -Wno-declaration-after-statement -Wno-unused-variable \
     -Wno-long-long -Wno-missing-field-initializers \
     -Wno-implicit-function-declaration -Wno-unused-function \
-    -Wno-uninitialized -Wno-sign-compare -Wno-alloc-size"
+    -Wno-uninitialized -Wno-sign-compare -Wno-alloc-size -Wno-format-zero-length"
 
 PROD_CFLAGS="-O2 -Wall -Wextra -Werror \
     -Wno-unused-parameter -Wno-unused-but-set-variable \
     -Wno-declaration-after-statement -Wno-unused-variable \
     -Wno-long-long -Wno-missing-field-initializers \
     -Wno-implicit-function-declaration -Wno-unused-function \
-    -Wno-uninitialized -Wno-sign-compare -Wno-alloc-size"
+    -Wno-uninitialized -Wno-sign-compare -Wno-alloc-size -Wno-format-zero-length"
 
 # Build function
 build_env() {

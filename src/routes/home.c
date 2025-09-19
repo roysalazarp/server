@@ -3,14 +3,16 @@
 
 #include "ark/utils.h"
 
+#include "helpers.h"
 #include "routes.h"
 #include "../globals.h"
 
 void home(void *v) {
+    char err[ERR_SIZE] = {0};
     RequestCtx *rctx = (RequestCtx *)v;
 
     int user_id = 0;
-    is_authenticated(&user_id, rctx);
+    is_authenticated(err, &user_id, rctx);
 
     uint32_t index = 0;
     find_element_index(&index, component_name_arr, "home", component_arr_length);

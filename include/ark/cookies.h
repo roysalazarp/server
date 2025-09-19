@@ -18,7 +18,7 @@ typedef struct {
   Cookie *p;
 } Cookies;
 
-int cookie_count(uint32_t *count, char *cookies, uint32_t cookies_length);
+int cookie_count(char *err, uint32_t *count, char *cookies, uint32_t cookies_length);
 int parse_cookies(Cookies *ck, char *cookies, uint32_t cookies_length);
 
 #endif /* COOKIES */

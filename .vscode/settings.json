@@ -74,7 +74,8 @@
         "sqlite3.h": "c",
         "poll.h": "c",
         "ssl.h": "c",
-        "sysinfo.h": "c"
+        "sysinfo.h": "c",
+        "helpers.h": "c"
     },
     "C_Cpp.errorSquiggles": "enabled"
 }
