@@ -6,11 +6,47 @@
 #include <limits.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <ctype.h>
 
 #include "../../include/ark/shared.h"
 #include "../../include/ark/utils.h"
 
+#define PROJECT_ROOT "/workspaces/server/"
+
 void bzero(void *p, size_t n) { memset(p, 0, n); }
+
+static void print_source_line(const char *file, int line_offset) {
+    char full_path[512];
+    snprintf(full_path, sizeof(full_path), "%s%s", PROJECT_ROOT, file);
+
+    FILE *fp = fopen(full_path, "r");
+    if (!fp) return;
+
+    char buf[512];
+    int current = 1;
+    int target_line = line_offset;
+
+    while (fgets(buf, sizeof(buf), fp)) {
+        if (current == target_line) {
+            // Remove trailing newline
+            size_t len = strlen(buf);
+            if (len > 0 && buf[len - 1] == '\n') buf[len - 1] = '\0';
+
+            // Skip leading whitespace
+            char *trimmed = buf;
+            while (*trimmed && isspace((unsigned char)*trimmed)) {
+                trimmed++;
+            }
+
+            fprintf(stderr, "Line details:  " ANSI_GRAY "%s" ANSI_RESET "\n", trimmed);
+
+            break;
+        }
+        current++;
+    }
+    fclose(fp);
+}
+
 
 unsigned long available_ram() {
     struct sysinfo info;
@@ -26,13 +62,10 @@ unsigned long available_ram() {
     return 0;
 }
 
-int ark_count_files(uint32_t *num_of_filepaths, char *root_path) {
-    int _;
+PANIC ark_count_files(uint32_t *num_of_filepaths, char *root_path) {
+    int op_res;
     DIR *dir = opendir(root_path);
-    if (dir == NULL) {
-        perror(NULL);
-        return -1;
-    }
+    ARK_ASSERT(dir != NULL, 1, "opendir func failed for file %.*s", (int)strlen(root_path), root_path);
 
     struct dirent *entry = {0};
     struct stat statbuf = {0};
@@ -51,15 +84,13 @@ int ark_count_files(uint32_t *num_of_filepaths, char *root_path) {
         boolean is_dir = (boolean)(stat(path_buffer, &statbuf) == 0 && S_ISDIR(statbuf.st_mode));
 
         if (is_dir) {
-            _ = ark_count_files(num_of_filepaths, path_buffer);
-            assert(_ != -1);
+            ark_count_files(num_of_filepaths, path_buffer);
         } else {
             (*num_of_filepaths)++;
         }
     }
 
     closedir(dir);
-    return 0;
 }
 
 int list_files_recursive(char **array_of_filepaths, uint32_t num_of_filepaths, char *base_path, uint32_t *internal_count);

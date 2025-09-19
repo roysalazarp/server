@@ -203,6 +203,18 @@ void test(void *v) {
     uint32_t component_length = strlen(component);
     assert(component_length);
 
+    uint32_t cindex;
+
+    uint32_t i;
+    for (i = 0; i < component_rendering_ctx_arr[index].length; i++) {
+        if (strncmp(component_rendering_ctx_arr[index].ctx_name_arr[i], "tables", strlen("tables")) == 0) {
+            cindex = i;
+            break;
+        }
+    }
+
+    uint64_t range = component_rendering_ctx_arr[i].ctx_arr[cindex];
+
     char response[KB(8)];
     bzero(response, KB(8));
     sprintf(response,
@@ -333,11 +345,11 @@ int main() {
     int op_res;
     
     uint32_t num_of_filepaths = 0;
-    ark_count_files(&num_of_filepaths, MYDIR);
+    ark_count_files(&num_of_filepaths, MYDIR); /* We'll need this later for memory allocation */
     
     Memory *memory = reserve_memory(PAGE_SIZE * 12);
     
-    size_t *array_of_lengths = memory_alloc(memory, num_of_filepaths * sizeof(size_t));
+    size_t *array_of_lengths = memory_alloc(memory, num_of_filepaths * sizeof(size_t)); /* How long is each file path */
     ark_list_file_sizes(array_of_lengths, num_of_filepaths, MYDIR);
     
     char **array_of_filepaths = memory_alloc(memory, num_of_filepaths * sizeof(char *));

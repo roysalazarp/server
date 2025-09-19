@@ -73,7 +73,8 @@
         "cookies.h": "c",
         "sqlite3.h": "c",
         "poll.h": "c",
-        "ssl.h": "c"
+        "ssl.h": "c",
+        "sysinfo.h": "c"
     },
     "C_Cpp.errorSquiggles": "enabled"
 }
