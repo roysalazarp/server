@@ -53,6 +53,9 @@
         }                                                                           \
     } while (0)
 
+/*
+Maybe I don't need this macro.
+
 #define PANIC_ON_ERR(err_code, expr, ...)                                           \
     do {                                                                            \
         if (err_code == expr) {                                                     \
@@ -63,9 +66,10 @@
             abort();                                                                \
         }                                                                           \
     } while (0)
+*/
 
 void bzero(void *p, size_t n);
-static void print_source_line(const char *file, int line_offset);
+void print_source_line(const char *file, int line_offset);
 unsigned long available_ram();
 panic ark_count_files(uint32_t *num_of_filepaths, char *root_path);
 int ark_list_files(char **array_of_filepaths, uint32_t num_of_filepaths, char *base_path);

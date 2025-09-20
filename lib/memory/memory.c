@@ -28,6 +28,15 @@ void *memory_alloc(Memory *memory, size_t size) {
     return ptr;
 }
 
+panic memory_alloc2(void **ptr, Memory *memory, uint64_t size) {
+    ARK_ASSERT(!memory->in_use, 0, "Cannot allocate while the memory is in use");
+    ARK_ASSERT((uint8_t *)memory->current + size <= (uint8_t *)memory->start + memory->size, 0, "Out of memory");
+
+    *ptr = memory->current;
+    memory->current = (uint8_t *)memory->current + size;
+    memory->used += size;
+}
+
 void *memory_in_use(Memory *memory) {
     assert(!memory->in_use); /** Memory is already in use! */
     memory->in_use = true;

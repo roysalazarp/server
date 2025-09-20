@@ -15,7 +15,7 @@
 
 void bzero(void *p, size_t n) { memset(p, 0, n); }
 
-static void print_source_line(const char *file, int line_offset) {
+void print_source_line(const char *file, int line_offset) {
     char full_path[512];
     snprintf(full_path, sizeof(full_path), "%s%s", PROJECT_ROOT, file);
 

@@ -366,15 +366,17 @@ int main() {
     uint32_t num_of_filepaths = 0;
     ark_count_files(&num_of_filepaths, MYDIR); /* We'll need this later for memory allocation */
     
-    void *mem = NULL;
     uint64_t mem_size = PAGE_SIZE * 12;
-
-    PANIC_ON_ERR(MAP_FAILED, (mem = mmap(NULL, (size_t)mem_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)), "mmap failed");
+    void *mem = mmap(NULL, (size_t)mem_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    ARK_ASSERT(mem != MAP_FAILED, 1, "mmap failed for size %d", (int)mem_size);
     
     Memory memory = {0};
     memory_init(&memory, mem, mem_size);
     
-    size_t *array_of_lengths = memory_alloc(&memory, num_of_filepaths * sizeof(size_t)); /* How long is each file path */
+    // size_t *array_of_lengths = memory_alloc(&memory, num_of_filepaths * sizeof(size_t)); /* How long is each file path */
+    size_t *array_of_lengths = NULL;
+    memory_alloc2((void **)&array_of_lengths, &memory, num_of_filepaths * sizeof(size_t));
+
     ark_list_file_sizes(array_of_lengths, num_of_filepaths, MYDIR);
     
     char **array_of_filepaths = memory_alloc(&memory, num_of_filepaths * sizeof(char *));
