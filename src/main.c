@@ -8,6 +8,7 @@
 #include <sqlite3.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#include <sys/mman.h>
 
 #include "ark/shared.h"
 #include "ark/server.h"
@@ -22,6 +23,10 @@
 #include "routes/routes.h"
 #include "parsers/parsers.h"
 #include "globals.h"
+
+#ifndef MAP_ANONYMOUS
+#define MAP_ANONYMOUS 0x20
+#endif
 
 #define PORT 443
 
@@ -240,8 +245,20 @@ void handler(void *arg) {
         int op_res;
         ark_fd_await(fd, 'r');
         
+        char err[ERR_SIZE] = {0};
+        
         RequestCtx rctx = {0};
-        rctx.memory = reserve_memory(PAGE_SIZE * 3);
+
+        void *mem = NULL;
+        uint64_t mem_size = PAGE_SIZE * 3;
+
+        mem = mmap(NULL, (size_t)mem_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        // TODO: this may err, return err message to web frontend
+        
+        Memory memory = {0};
+        memory_init(&memory, mem, mem_size);
+
+        rctx.memory = &memory;
         
         ark_client_accept(&rctx.fd, fd);
         ark_fd_await(rctx.fd, 'r');
@@ -341,31 +358,39 @@ int full_path(char *buffer, uint32_t buffer_size, char *relative_path) {
 int main() {
     setbuf(stdout, NULL);
     
+    char err[ERR_SIZE] = {0};
+
     uint32_t i;
     int op_res;
     
     uint32_t num_of_filepaths = 0;
     ark_count_files(&num_of_filepaths, MYDIR); /* We'll need this later for memory allocation */
     
-    Memory *memory = reserve_memory(PAGE_SIZE * 12);
+    void *mem = NULL;
+    uint64_t mem_size = PAGE_SIZE * 12;
+
+    PANIC_ON_ERR(MAP_FAILED, (mem = mmap(NULL, (size_t)mem_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)), "mmap failed");
     
-    size_t *array_of_lengths = memory_alloc(memory, num_of_filepaths * sizeof(size_t)); /* How long is each file path */
+    Memory memory = {0};
+    memory_init(&memory, mem, mem_size);
+    
+    size_t *array_of_lengths = memory_alloc(&memory, num_of_filepaths * sizeof(size_t)); /* How long is each file path */
     ark_list_file_sizes(array_of_lengths, num_of_filepaths, MYDIR);
     
-    char **array_of_filepaths = memory_alloc(memory, num_of_filepaths * sizeof(char *));
+    char **array_of_filepaths = memory_alloc(&memory, num_of_filepaths * sizeof(char *));
     for (i = 0; i < num_of_filepaths; i++) {
-        array_of_filepaths[i] = (char *)memory_alloc(memory, array_of_lengths[i] * sizeof(char));
+        array_of_filepaths[i] = (char *)memory_alloc(&memory, array_of_lengths[i] * sizeof(char));
     }
 
     ark_list_files(array_of_filepaths, num_of_filepaths, MYDIR);
 
-    char **array_of_file_contents = memory_alloc(memory, num_of_filepaths * sizeof(char *));
+    char **array_of_file_contents = memory_alloc(&memory, num_of_filepaths * sizeof(char *));
 
     for (i = 0; i < num_of_filepaths; i++) {
         char *filepath = array_of_filepaths[i];
         
         size_t file_size = ark_get_file_size(filepath);
-        char *file_content = memory_alloc(memory, file_size + 1);
+        char *file_content = memory_alloc(&memory, file_size + 1);
             
         FILE *file = fopen(filepath, "r");
         size_t read_size = fread(file_content, sizeof(char), file_size, file);
@@ -377,7 +402,7 @@ int main() {
     }
     
     uint32_t mask_size = (num_of_filepaths / U32_BITS) ? (num_of_filepaths / U32_BITS) : 1; /* ensure a minimum */
-    uint32_t *html_file_mask = memory_alloc(memory, mask_size * sizeof(uint32_t));
+    uint32_t *html_file_mask = memory_alloc(&memory, mask_size * sizeof(uint32_t));
 
     ark_make_html_file_mask(html_file_mask, array_of_filepaths, num_of_filepaths);
     
@@ -385,41 +410,41 @@ int main() {
 
     ark_templates_count(&component_arr_length, html_file_mask, array_of_filepaths, array_of_file_contents, num_of_filepaths);
     
-    uint32_t *names_lengths = memory_alloc(memory, component_arr_length * sizeof(uint32_t *));
-    uint32_t *templates_lengths = memory_alloc(memory, component_arr_length * sizeof(uint32_t *));
+    uint32_t *names_lengths = memory_alloc(&memory, component_arr_length * sizeof(uint32_t *));
+    uint32_t *templates_lengths = memory_alloc(&memory, component_arr_length * sizeof(uint32_t *));
     
     ark_get_templates_info(names_lengths, templates_lengths, component_arr_length, html_file_mask, array_of_filepaths, array_of_file_contents, num_of_filepaths);
     
-    component_name_arr = memory_alloc(memory, component_arr_length * sizeof(char *));
-    char **template_content_array = memory_alloc(memory, component_arr_length * sizeof(char *));
+    component_name_arr = memory_alloc(&memory, component_arr_length * sizeof(char *));
+    char **template_content_array = memory_alloc(&memory, component_arr_length * sizeof(char *));
     for (i = 0; i < component_arr_length; i++) {
-        component_name_arr[i] = memory_alloc(memory, names_lengths[i] + 1);
-        template_content_array[i] = memory_alloc(memory, templates_lengths[i] + 1);
+        component_name_arr[i] = memory_alloc(&memory, names_lengths[i] + 1);
+        template_content_array[i] = memory_alloc(&memory, templates_lengths[i] + 1);
     }
 
     ark_make_templates_array(component_name_arr, template_content_array, component_arr_length, html_file_mask, array_of_filepaths, array_of_file_contents, num_of_filepaths);
     
-    uint32_t *compiled_templates_lengths = memory_alloc(memory, component_arr_length * sizeof(uint32_t *));
+    uint32_t *compiled_templates_lengths = memory_alloc(&memory, component_arr_length * sizeof(uint32_t *));
     
     ark_get_compile_templates_lengths(compiled_templates_lengths, component_name_arr, template_content_array, component_arr_length);
     
-    component_content_arr = memory_alloc(memory, component_arr_length * sizeof(char *));
+    component_content_arr = memory_alloc(&memory, component_arr_length * sizeof(char *));
     for (i = 0; i < component_arr_length; i++) {
-        component_content_arr[i] = memory_alloc(memory, compiled_templates_lengths[i] + 1);
+        component_content_arr[i] = memory_alloc(&memory, compiled_templates_lengths[i] + 1);
     }
     
     ark_compile_templates(component_content_arr, component_name_arr, template_content_array, component_arr_length);
 
-    uint32_t *template_rendering_ctx_count = memory_alloc(memory, component_arr_length * sizeof(uint32_t));
+    uint32_t *template_rendering_ctx_count = memory_alloc(&memory, component_arr_length * sizeof(uint32_t));
 
     ark_count_template_rendering_ctx_amount(template_rendering_ctx_count, component_content_arr, component_arr_length);
 
-    component_rendering_ctx_arr = memory_alloc(memory, component_arr_length * sizeof(TemplateRenderingCtxArr));
+    component_rendering_ctx_arr = memory_alloc(&memory, component_arr_length * sizeof(TemplateRenderingCtxArr));
     for (i = 0; i < component_arr_length; i++) {
         component_rendering_ctx_arr[i].length = template_rendering_ctx_count[i];
-        component_rendering_ctx_arr[i].ctx_arr = memory_alloc(memory, template_rendering_ctx_count[i] * sizeof(uint64_t));
-        component_rendering_ctx_arr[i].ctx_name_lengths_arr = memory_alloc(memory, template_rendering_ctx_count[i] * sizeof(uint32_t));
-        component_rendering_ctx_arr[i].ctx_name_arr = memory_alloc(memory, template_rendering_ctx_count[i] * sizeof(char *));
+        component_rendering_ctx_arr[i].ctx_arr = memory_alloc(&memory, template_rendering_ctx_count[i] * sizeof(uint64_t));
+        component_rendering_ctx_arr[i].ctx_name_lengths_arr = memory_alloc(&memory, template_rendering_ctx_count[i] * sizeof(uint32_t));
+        component_rendering_ctx_arr[i].ctx_name_arr = memory_alloc(&memory, template_rendering_ctx_count[i] * sizeof(char *));
     }
 
     for (i = 0; i < component_arr_length; i++) {
@@ -432,7 +457,7 @@ int main() {
     for (i = 0; i < component_arr_length; i++) {
         uint32_t j;
         for (j = 0; j < component_rendering_ctx_arr[i].length; j++) {
-            component_rendering_ctx_arr[i].ctx_name_arr[j] = memory_alloc(memory, component_rendering_ctx_arr[i].ctx_name_lengths_arr[j] + 1);
+            component_rendering_ctx_arr[i].ctx_name_arr[j] = memory_alloc(&memory, component_rendering_ctx_arr[i].ctx_name_lengths_arr[j] + 1);
         }
     }
     

@@ -43,7 +43,6 @@
         }                                                                           \
     } while (0)
 
-
 #define CHECK_ERR(expr, ...)                                                        \
     do {                                                                            \
         if (!(expr)) {                                                              \
@@ -54,10 +53,21 @@
         }                                                                           \
     } while (0)
 
+#define PANIC_ON_ERR(err_code, expr, ...)                                           \
+    do {                                                                            \
+        if (err_code == expr) {                                                     \
+            if (sizeof(#__VA_ARGS__) > 1 && strcmp(#__VA_ARGS__, "\"\"") != 0) {    \
+                snprintf(err, ERR_SIZE, __VA_ARGS__);                               \
+            }                                                                       \
+            fprintf(stderr, err);                                                   \
+            abort();                                                                \
+        }                                                                           \
+    } while (0)
+
 void bzero(void *p, size_t n);
 static void print_source_line(const char *file, int line_offset);
 unsigned long available_ram();
-PANIC ark_count_files(uint32_t *num_of_filepaths, char *root_path);
+panic ark_count_files(uint32_t *num_of_filepaths, char *root_path);
 int ark_list_files(char **array_of_filepaths, uint32_t num_of_filepaths, char *base_path);
 size_t ark_get_file_size(char *filepath);
 int string_to_int(int *result, char *str, uint32_t length);

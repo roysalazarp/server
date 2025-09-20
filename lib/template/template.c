@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <assert.h>
 #include <stdlib.h>
+#include <sys/mman.h>
 
 #include "../../include/ark/shared.h"
 #include "../../include/ark/memory.h"
@@ -1802,22 +1803,30 @@ int compile_template_old(char *rendering, char **template_name_array, char **tem
 }
 
 int ark_get_compile_templates_lengths(uint32_t *compiled_templates_lengths, char **template_name_array, char **template_content_array, uint32_t template_count) {
-    Memory *memory = reserve_memory(PAGE_SIZE * 5);
+    char err[ERR_SIZE] = {0};
+    
+    void *mem = NULL;
+    uint64_t mem_size = PAGE_SIZE * 5;
+
+    PANIC_ON_ERR(MAP_FAILED, (mem = mmap(NULL, (size_t)mem_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)), "mmap failed");
+    
+    Memory memory = {0};
+    memory_init(&memory, mem, mem_size);
     
     uint32_t i;
     
     for (i = 0; i < template_count; i++) {
-        char *rendering = LOCK_MEMORY(memory);
+        char *rendering = LOCK_MEMORY(&memory);
         memcpy(rendering, template_content_array[i], strlen(template_content_array[i]));
 
         compile_template(rendering, template_name_array, template_content_array, template_count);
 
         uint32_t length = strlen(rendering);
-        UNLOCK_MEMORY(memory, rendering + length + 1);
+        UNLOCK_MEMORY(&memory, rendering + length + 1);
 
         compiled_templates_lengths[i] = strlen(rendering);
 
-        memory_reset(memory, (uint8_t *)rendering);
+        memory_reset(&memory, (uint8_t *)rendering);
     }
 
     return 0;

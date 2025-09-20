@@ -32,10 +32,8 @@ typedef struct {
     uint32_t length;
 } String;
 
-// typedef void panic;
-#define PANIC void
-#define ERR char*
-#define FAIL_SAFE void
+typedef void panic;
+typedef void fail_safe;
 
 #define U32_BITS 32
 

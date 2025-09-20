@@ -2,31 +2,16 @@
 #include <sys/mman.h>
 #include <assert.h>
 
-#include "memory_internal.h"
+#include "../../include/ark/utils.h"
 #include "../../include/ark/memory.h"
 
-#ifndef MAP_ANONYMOUS
-#define MAP_ANONYMOUS 0x20
-#endif
+fail_safe memory_init(Memory *memory, void *mem, uint64_t mem_size) {
+    memset(mem, 0, mem_size);
 
-Memory *reserve_memory(size_t size) {
-    void *raw_memory = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    Memory *memory = memory_setup(raw_memory, size);
-
-    return memory;
-}
-
-Memory *memory_setup(void *raw_memory, size_t size) {
-    memset(raw_memory, 0, size);
-
-    Memory *memory = raw_memory;
-
-    memory->size = size;
-    memory->start = memory;
-    memory->current = (uint8_t *)memory + sizeof(Memory);
+    memory->size = (size_t)mem_size;
+    memory->start = mem;
+    memory->current = mem;
     memory->used = (uint8_t *)memory->current - (uint8_t *)memory->start;
-
-    return memory;
 }
 
 void *memory_alloc(Memory *memory, size_t size) {

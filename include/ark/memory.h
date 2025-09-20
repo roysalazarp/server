@@ -12,11 +12,10 @@ typedef struct {
     boolean in_use;
 } Memory;
 
-Memory *reserve_memory(size_t size);
+fail_safe memory_init(Memory *memory, void *mem, uint64_t mem_size);
 void *memory_alloc(Memory *memory, size_t size);
 void memory_reset(Memory *memory, uint8_t *ptr);
 void memory_free(Memory *memory);
-
 void *memory_in_use(Memory *memory);
 void memory_out_of_use(Memory *memory, void *tmp);
 

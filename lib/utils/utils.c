@@ -62,7 +62,7 @@ unsigned long available_ram() {
     return 0;
 }
 
-PANIC ark_count_files(uint32_t *num_of_filepaths, char *root_path) {
+panic ark_count_files(uint32_t *num_of_filepaths, char *root_path) {
     int op_res;
     DIR *dir = opendir(root_path);
     ARK_ASSERT(dir != NULL, 1, "opendir func failed for file %.*s", (int)strlen(root_path), root_path);
