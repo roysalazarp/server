@@ -35,7 +35,7 @@ int is_authenticated(char *err, int *user_id, RequestCtx *rctx) {
         cookie_count(err, &count, cookies, cookies_length);
 
         Cookies parsed_cookies = {0};
-        parsed_cookies.p = memory_alloc(memory, count * sizeof(Cookie));
+        PROPAGATE_ERR(try_memory_alloc(err, (void **)&parsed_cookies.p, memory, count * sizeof(Cookie)), "Server at capacity");
 
         parse_cookies(&parsed_cookies, cookies, cookies_length);
         

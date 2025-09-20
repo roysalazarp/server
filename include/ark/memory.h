@@ -13,8 +13,8 @@ typedef struct {
 } Memory;
 
 fail_safe memory_init(Memory *memory, void *mem, uint64_t mem_size);
-void *memory_alloc(Memory *memory, size_t size);
-panic memory_alloc2(void **ptr, Memory *memory, uint64_t size);
+panic memory_alloc(void **ptr, Memory *memory, uint64_t size);
+int try_memory_alloc(char *err, void **ptr, Memory *memory, uint64_t size);
 void memory_reset(Memory *memory, uint8_t *ptr);
 void memory_free(Memory *memory);
 void *memory_in_use(Memory *memory);

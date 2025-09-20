@@ -53,20 +53,6 @@
         }                                                                           \
     } while (0)
 
-/*
-Maybe I don't need this macro.
-
-#define PANIC_ON_ERR(err_code, expr, ...)                                           \
-    do {                                                                            \
-        if (err_code == expr) {                                                     \
-            if (sizeof(#__VA_ARGS__) > 1 && strcmp(#__VA_ARGS__, "\"\"") != 0) {    \
-                snprintf(err, ERR_SIZE, __VA_ARGS__);                               \
-            }                                                                       \
-            fprintf(stderr, err);                                                   \
-            abort();                                                                \
-        }                                                                           \
-    } while (0)
-*/
 
 void bzero(void *p, size_t n);
 void print_source_line(const char *file, int line_offset);

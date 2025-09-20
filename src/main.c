@@ -129,66 +129,66 @@ void make_request(void *v) {
 void get_a(void *v) {
     RequestCtx *rctx = (RequestCtx *)v;
 
-	ServerUri *server_uri = memory_alloc(rctx->memory, sizeof(ServerUri));
-    memcpy(server_uri->server, "localhost", strlen("localhost"));
-    memcpy(server_uri->uri, "/a", strlen("/a"));
+	// ServerUri *server_uri = memory_alloc(rctx->memory, sizeof(ServerUri));
+    // memcpy(server_uri->server, "localhost", strlen("localhost"));
+    // memcpy(server_uri->uri, "/a", strlen("/a"));
 
-    int stack_size = KB(8);
+    // int stack_size = KB(8);
     
-    printf("get_a req to /a\n");
-    Channel *done = chancreate(sizeof(void*), 0);
-    server_uri->done = done;
-    ark_task_create(make_request, server_uri, stack_size);
-    chanrecv(done, NULL);
-    printf("get_a req to /a DONE\n");
+    // printf("get_a req to /a\n");
+    // Channel *done = chancreate(sizeof(void*), 0);
+    // server_uri->done = done;
+    // ark_task_create(make_request, server_uri, stack_size);
+    // chanrecv(done, NULL);
+    // printf("get_a req to /a DONE\n");
 
-	ServerUri *server_uri_1 = memory_alloc(rctx->memory, sizeof(ServerUri));
-    memcpy(server_uri_1->server, "localhost", strlen("localhost"));
-    memcpy(server_uri_1->uri, "/b", strlen("/b"));
+	// ServerUri *server_uri_1 = memory_alloc(rctx->memory, sizeof(ServerUri));
+    // memcpy(server_uri_1->server, "localhost", strlen("localhost"));
+    // memcpy(server_uri_1->uri, "/b", strlen("/b"));
 
-    printf("get_a req to /b\n");
-    Channel *done_1 = chancreate(sizeof(void*), 0);
-    server_uri_1->done = done_1;
-    ark_task_create(make_request, server_uri_1, stack_size);
-    chanrecv(done_1, NULL);
-    printf("get_a req to /b DONE\n");
+    // printf("get_a req to /b\n");
+    // Channel *done_1 = chancreate(sizeof(void*), 0);
+    // server_uri_1->done = done_1;
+    // ark_task_create(make_request, server_uri_1, stack_size);
+    // chanrecv(done_1, NULL);
+    // printf("get_a req to /b DONE\n");
 
-    char resbuf[1000];
-    snprintf(resbuf, sizeof resbuf, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 11\r\n\r\nHello World");
-    int len = strlen(resbuf);
+    // char resbuf[1000];
+    // snprintf(resbuf, sizeof resbuf, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 11\r\n\r\nHello World");
+    // int len = strlen(resbuf);
     // ark_fd_write(rctx->fd, resbuf, len);
 }
 
 void get_b(void *v) {
     RequestCtx *rctx = (RequestCtx *)v;
 
-	ServerUri *server_uri = memory_alloc(rctx->memory, sizeof(ServerUri));
-    memcpy(server_uri->server, "localhost", strlen("localhost"));
-    memcpy(server_uri->uri, "/b", strlen("/b"));
+	// ServerUri *server_uri = memory_alloc(rctx->memory, sizeof(ServerUri));
+    // memcpy(server_uri->server, "localhost", strlen("localhost"));
+    // memcpy(server_uri->uri, "/b", strlen("/b"));
 
-    int stack_size = KB(8);
+    // int stack_size = KB(8);
     
-    printf("get_b req to /b\n");
-    Channel *done = chancreate(sizeof(void*), 0);
-    server_uri->done = done;
-    ark_task_create(make_request, server_uri, stack_size);
-    chanrecv(done, NULL);
-    printf("get_b req to /b DONE\n");
+    // printf("get_b req to /b\n");
+    // Channel *done = chancreate(sizeof(void*), 0);
+    // server_uri->done = done;
+    // ark_task_create(make_request, server_uri, stack_size);
+    // chanrecv(done, NULL);
+    // printf("get_b req to /b DONE\n");
 
-	ServerUri *server_uri_1 = memory_alloc(rctx->memory, sizeof(ServerUri));
-    memcpy(server_uri_1->server, "localhost", strlen("localhost"));
-    memcpy(server_uri_1->uri, "/a", strlen("/a"));
+	// ServerUri *server_uri_1 = memory_alloc(rctx->memory, sizeof(ServerUri));
+    // memcpy(server_uri_1->server, "localhost", strlen("localhost"));
+    // memcpy(server_uri_1->uri, "/a", strlen("/a"));
 
-    printf("get_b req to /a\n");
-    Channel *done_1 = chancreate(sizeof(void*), 0);
-    server_uri_1->done = done_1;
-    ark_task_create(make_request, server_uri_1, stack_size);
-    chanrecv(done_1, NULL);
-    printf("get_b req to /a DONE\n");
+    // printf("get_b req to /a\n");
+    // Channel *done_1 = chancreate(sizeof(void*), 0);
+    // server_uri_1->done = done_1;
+    // ark_task_create(make_request, server_uri_1, stack_size);
+    // chanrecv(done_1, NULL);
+    // printf("get_b req to /a DONE\n");
 
-    char resbuf[1000];
-    snprintf(resbuf, sizeof resbuf, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 11\r\n\r\nHello World");
-    int len = strlen(resbuf);
+    // char resbuf[1000];
+    // snprintf(resbuf, sizeof resbuf, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 11\r\n\r\nHello World");
+    // int len = strlen(resbuf);
     // ark_fd_write(rctx->fd, resbuf, len);
 }
 
@@ -288,11 +288,14 @@ void handler(void *arg) {
             assert(0);
         }
 
-        rctx.raw_request = memory_alloc(rctx.memory, sizeof(char) * MAX_REQUEST_MSG_SIZE);
+        try_memory_alloc(err, (void **)&rctx.raw_request, rctx.memory, sizeof(char) * MAX_REQUEST_MSG_SIZE);
+        if (strlen(err) > 0) {
+            // TODO: return some message to the web frontend
+            assert(0);
+        }
+
         ark_fd_read(rctx.ssl, rctx.fd, rctx.raw_request, MAX_REQUEST_MSG_SIZE);
         rctx.raw_request_length = strlen(rctx.raw_request);
-
-        // rctx.msg = memory_alloc(rctx.memory, sizeof(struct HttpMessage));
         
         int inmsglen;
         ssize_t got;
@@ -367,27 +370,27 @@ int main() {
     memory_init(&memory, mem, mem_size);
     
     size_t *array_of_lengths = NULL;
-    memory_alloc2((void **)&array_of_lengths, &memory, num_of_filepaths * sizeof(size_t));
+    memory_alloc((void **)&array_of_lengths, &memory, num_of_filepaths * sizeof(size_t));
 
     ark_list_file_sizes(array_of_lengths, num_of_filepaths, MYDIR);
     
     char **array_of_filepaths = NULL;
-    memory_alloc2((void **)&array_of_filepaths, &memory, num_of_filepaths * sizeof(char *));
+    memory_alloc((void **)&array_of_filepaths, &memory, num_of_filepaths * sizeof(char *));
     for (i = 0; i < num_of_filepaths; i++) {
-        memory_alloc2((void **)&array_of_filepaths[i], &memory, array_of_lengths[i] * sizeof(char));
+        memory_alloc((void **)&array_of_filepaths[i], &memory, array_of_lengths[i] * sizeof(char));
     }
 
     ark_list_files(array_of_filepaths, num_of_filepaths, MYDIR);
 
     char **array_of_file_contents = NULL;
-    memory_alloc2((void **)&array_of_file_contents, &memory, num_of_filepaths * sizeof(char *));
+    memory_alloc((void **)&array_of_file_contents, &memory, num_of_filepaths * sizeof(char *));
 
     for (i = 0; i < num_of_filepaths; i++) {
         char *filepath = array_of_filepaths[i];
         
         size_t file_size = ark_get_file_size(filepath);
         char *file_content = NULL;
-        memory_alloc2((void **)&file_content, &memory, file_size + 1);
+        memory_alloc((void **)&file_content, &memory, file_size + 1);
             
         FILE *file = fopen(filepath, "r");
         size_t read_size = fread(file_content, sizeof(char), file_size, file);
@@ -400,7 +403,7 @@ int main() {
     
     uint32_t mask_size = (num_of_filepaths / U32_BITS) ? (num_of_filepaths / U32_BITS) : 1; /* ensure a minimum */
     uint32_t *html_file_mask = NULL;
-    memory_alloc2((void **)&html_file_mask, &memory, mask_size * sizeof(uint32_t));
+    memory_alloc((void **)&html_file_mask, &memory, mask_size * sizeof(uint32_t));
 
     ark_make_html_file_mask(html_file_mask, array_of_filepaths, num_of_filepaths);
     
@@ -409,46 +412,46 @@ int main() {
     ark_templates_count(&component_arr_length, html_file_mask, array_of_filepaths, array_of_file_contents, num_of_filepaths);
     
     uint32_t *names_lengths = NULL;
-    memory_alloc2((void **)&names_lengths, &memory, component_arr_length * sizeof(uint32_t *));
+    memory_alloc((void **)&names_lengths, &memory, component_arr_length * sizeof(uint32_t *));
     uint32_t *templates_lengths = NULL;
-    memory_alloc2((void **)&templates_lengths, &memory, component_arr_length * sizeof(uint32_t *));
+    memory_alloc((void **)&templates_lengths, &memory, component_arr_length * sizeof(uint32_t *));
 
     ark_get_templates_info(names_lengths, templates_lengths, component_arr_length, html_file_mask, array_of_filepaths, array_of_file_contents, num_of_filepaths);
     
-    memory_alloc2((void **)&component_name_arr, &memory, component_arr_length * sizeof(char *));
+    memory_alloc((void **)&component_name_arr, &memory, component_arr_length * sizeof(char *));
     
     char **template_content_array = NULL;
-    memory_alloc2((void **)&template_content_array, &memory, component_arr_length * sizeof(char *));
+    memory_alloc((void **)&template_content_array, &memory, component_arr_length * sizeof(char *));
     for (i = 0; i < component_arr_length; i++) {
-        memory_alloc2((void **)&component_name_arr[i], &memory, names_lengths[i] + 1);
-        memory_alloc2((void **)&template_content_array[i], &memory, templates_lengths[i] + 1);
+        memory_alloc((void **)&component_name_arr[i], &memory, names_lengths[i] + 1);
+        memory_alloc((void **)&template_content_array[i], &memory, templates_lengths[i] + 1);
     }
 
     ark_make_templates_array(component_name_arr, template_content_array, component_arr_length, html_file_mask, array_of_filepaths, array_of_file_contents, num_of_filepaths);
     
     uint32_t *compiled_templates_lengths = NULL;
-    memory_alloc2((void **)&compiled_templates_lengths, &memory, component_arr_length * sizeof(uint32_t *));
+    memory_alloc((void **)&compiled_templates_lengths, &memory, component_arr_length * sizeof(uint32_t *));
     
     ark_get_compile_templates_lengths(compiled_templates_lengths, component_name_arr, template_content_array, component_arr_length);
     
-    memory_alloc2((void **)&component_content_arr, &memory, component_arr_length * sizeof(char *));
+    memory_alloc((void **)&component_content_arr, &memory, component_arr_length * sizeof(char *));
     for (i = 0; i < component_arr_length; i++) {
-        memory_alloc2((void **)&component_content_arr[i], &memory, compiled_templates_lengths[i] + 1);
+        memory_alloc((void **)&component_content_arr[i], &memory, compiled_templates_lengths[i] + 1);
     }
     
     ark_compile_templates(component_content_arr, component_name_arr, template_content_array, component_arr_length);
 
     uint32_t *template_rendering_ctx_count = NULL;
-    memory_alloc2((void **)&template_rendering_ctx_count, &memory, component_arr_length * sizeof(uint32_t));
+    memory_alloc((void **)&template_rendering_ctx_count, &memory, component_arr_length * sizeof(uint32_t));
 
     ark_count_template_rendering_ctx_amount(template_rendering_ctx_count, component_content_arr, component_arr_length);
 
-    memory_alloc2((void **)&component_rendering_ctx_arr, &memory, component_arr_length * sizeof(TemplateRenderingCtxArr));
+    memory_alloc((void **)&component_rendering_ctx_arr, &memory, component_arr_length * sizeof(TemplateRenderingCtxArr));
     for (i = 0; i < component_arr_length; i++) {
         component_rendering_ctx_arr[i].length = template_rendering_ctx_count[i];
-        memory_alloc2((void **)&(component_rendering_ctx_arr[i].ctx_arr), &memory, template_rendering_ctx_count[i] * sizeof(uint64_t));
-        memory_alloc2((void **)&(component_rendering_ctx_arr[i].ctx_name_lengths_arr), &memory, template_rendering_ctx_count[i] * sizeof(uint32_t));
-        memory_alloc2((void **)&(component_rendering_ctx_arr[i].ctx_name_arr), &memory, template_rendering_ctx_count[i] * sizeof(char *));
+        memory_alloc((void **)&(component_rendering_ctx_arr[i].ctx_arr), &memory, template_rendering_ctx_count[i] * sizeof(uint64_t));
+        memory_alloc((void **)&(component_rendering_ctx_arr[i].ctx_name_lengths_arr), &memory, template_rendering_ctx_count[i] * sizeof(uint32_t));
+        memory_alloc((void **)&(component_rendering_ctx_arr[i].ctx_name_arr), &memory, template_rendering_ctx_count[i] * sizeof(char *));
     }
 
     for (i = 0; i < component_arr_length; i++) {
@@ -461,7 +464,7 @@ int main() {
     for (i = 0; i < component_arr_length; i++) {
         uint32_t j;
         for (j = 0; j < component_rendering_ctx_arr[i].length; j++) {
-            memory_alloc2((void **)&(component_rendering_ctx_arr[i].ctx_name_arr[j]), &memory, component_rendering_ctx_arr[i].ctx_name_lengths_arr[j] + 1);
+            memory_alloc((void **)&(component_rendering_ctx_arr[i].ctx_name_arr[j]), &memory, component_rendering_ctx_arr[i].ctx_name_lengths_arr[j] + 1);
         }
     }
     

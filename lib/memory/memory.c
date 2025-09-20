@@ -14,21 +14,18 @@ fail_safe memory_init(Memory *memory, void *mem, uint64_t mem_size) {
     memory->used = (uint8_t *)memory->current - (uint8_t *)memory->start;
 }
 
-void *memory_alloc(Memory *memory, size_t size) {
-    assert(!memory->in_use); /** Cannot allocate while the memory is in use! */
+int try_memory_alloc(char *err, void **ptr, Memory *memory, uint64_t size) {
+    CHECK_ERR(!memory->in_use, "Cannot allocate while the memory is in use");
+    CHECK_ERR((uint8_t *)memory->current + size <= (uint8_t *)memory->start + memory->size, "Out of memory");
 
-    if ((uint8_t *)memory->current + size > (uint8_t *)memory->start + memory->size) {
-        assert(0); /** Out of memory! */
-    }
-
-    void *ptr = memory->current;
+    *ptr = memory->current;
     memory->current = (uint8_t *)memory->current + size;
     memory->used += size;
 
-    return ptr;
+    return 0;
 }
 
-panic memory_alloc2(void **ptr, Memory *memory, uint64_t size) {
+panic memory_alloc(void **ptr, Memory *memory, uint64_t size) {
     ARK_ASSERT(!memory->in_use, 0, "Cannot allocate while the memory is in use");
     ARK_ASSERT((uint8_t *)memory->current + size <= (uint8_t *)memory->start + memory->size, 0, "Out of memory");
 
