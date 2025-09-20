@@ -10,7 +10,7 @@
 typedef struct {
     Memory *memory;
     int fd;
-    struct HttpMessage *msg;
+    struct HttpMessage msg;
     char *raw_request;
     uint32_t raw_request_length;
     SSL *ssl;

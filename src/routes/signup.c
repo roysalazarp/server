@@ -42,7 +42,7 @@ void signup(void *v) {
 void signup_create_account(void *v) {
     RequestCtx *rctx = (RequestCtx *)v;
     char *request = rctx->raw_request;
-    struct HttpMessage *msg = rctx->msg;
+    struct HttpMessage *msg = &rctx->msg;
 
     struct UrlParams h;
     ParseParams(request + msg->i, -1, &h);

@@ -20,7 +20,7 @@ int some_other_func(char *err, int n) {
 
 int is_authenticated(char *err, int *user_id, RequestCtx *rctx) {
     char *request = rctx->raw_request;
-    struct HttpMessage *msg = rctx->msg;
+    struct HttpMessage *msg = &rctx->msg;
     Memory *memory = rctx->memory;
 
     int n;

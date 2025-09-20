@@ -43,7 +43,7 @@ void login(void *v) {
 void login_create_session(void *v) {
     RequestCtx *rctx = (RequestCtx *)v;
     char *request = rctx->raw_request;
-    struct HttpMessage *msg = rctx->msg;
+    struct HttpMessage *msg = &rctx->msg;
 
     struct UrlParams h;
     ParseParams(request + msg->i, -1, &h);

@@ -39,20 +39,13 @@
 #define MAX_REQUEST_MSG_SIZE KB(2)
 
 #define CheckUrlAndMethod(s, m) \
-  ((SlicesEqual(rctx.raw_request + rctx.msg->uri.a, rctx.msg->uri.b - rctx.msg->uri.a, s, strlen(s))) && (rctx.msg->method == m))
+  ((SlicesEqual(rctx.raw_request + rctx.msg.uri.a, rctx.msg.uri.b - rctx.msg.uri.a, s, strlen(s))) && (rctx.msg.method == m))
 
 #define GET(s) \
   CheckUrlAndMethod(s, kHttpGet)
 
 #define POST(s) \
   CheckUrlAndMethod(s, kHttpPost)
-
-#define UrlEqual(S) \
-  SlicesEqual(rctx.raw_request + rctx.msg->uri.a, rctx.msg->uri.b - rctx.msg->uri.a, S, strlen(S))
-
-#define UrlStartsWith(S)                   \
-  (msg->uri.b - msg->uri.a >= strlen(S) && \
-   !memcmp(request + msg->uri.a, S, strlen(S)))
 
 typedef struct {
     char server[20];
@@ -299,12 +292,12 @@ void handler(void *arg) {
         ark_fd_read(rctx.ssl, rctx.fd, rctx.raw_request, MAX_REQUEST_MSG_SIZE);
         rctx.raw_request_length = strlen(rctx.raw_request);
 
-        rctx.msg = memory_alloc(rctx.memory, sizeof(struct HttpMessage));
+        // rctx.msg = memory_alloc(rctx.memory, sizeof(struct HttpMessage));
         
         int inmsglen;
         ssize_t got;
-        InitHttpMessage(rctx.msg, kHttpRequest);
-        if ((inmsglen = ParseHttpMessage(rctx.msg, rctx.raw_request, rctx.raw_request_length, rctx.raw_request_length)) <= 0) {
+        InitHttpMessage(&rctx.msg, kHttpRequest);
+        if ((inmsglen = ParseHttpMessage(&rctx.msg, rctx.raw_request, rctx.raw_request_length, rctx.raw_request_length)) <= 0) {
             if (!inmsglen) {
                 printf("client sent fragmented message\n");
             } else {
