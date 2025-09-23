@@ -62,8 +62,7 @@ unsigned long available_ram() {
     return 0;
 }
 
-panic ark_count_files(uint32_t *num_of_filepaths, char *root_path) {
-    int op_res;
+PANIC void ark_count_files(uint32_t *num_of_filepaths, char *root_path) {
     DIR *dir = opendir(root_path);
     ARK_ASSERT(dir != NULL, 1, "opendir func failed for file %.*s", (int)strlen(root_path), root_path);
 
@@ -93,14 +92,10 @@ panic ark_count_files(uint32_t *num_of_filepaths, char *root_path) {
     closedir(dir);
 }
 
-int list_files_recursive(char **array_of_filepaths, uint32_t num_of_filepaths, char *base_path, uint32_t *internal_count);
-int list_files_recursive(char **array_of_filepaths, uint32_t num_of_filepaths, char *base_path, uint32_t *internal_count) {
-    int _;
+ PANIC void list_files_recursive(char **array_of_filepaths, uint32_t num_of_filepaths, char *base_path, uint32_t *internal_count);
+ PANIC void list_files_recursive(char **array_of_filepaths, uint32_t num_of_filepaths, char *base_path, uint32_t *internal_count) {
     DIR *dir = opendir(base_path);
-    if (dir == NULL) {
-        perror(NULL);
-        return -1;
-    }
+    ARK_ASSERT(dir != NULL, 1, "opendir func failed for file %.*s", (int)strlen(base_path), base_path);
 
     struct dirent *entry = {0};
     struct stat statbuf = {0};
@@ -119,8 +114,7 @@ int list_files_recursive(char **array_of_filepaths, uint32_t num_of_filepaths, c
         boolean is_dir = (boolean)(stat(path_buffer, &statbuf) == 0 && S_ISDIR(statbuf.st_mode));
 
         if (is_dir) {
-            _ = list_files_recursive(array_of_filepaths, num_of_filepaths, path_buffer, internal_count);
-            assert(_ != -1);
+            list_files_recursive(array_of_filepaths, num_of_filepaths, path_buffer, internal_count);
         } else {
             memcpy(array_of_filepaths[*internal_count], path_buffer, strlen(path_buffer));
             (*internal_count)++;
@@ -128,23 +122,17 @@ int list_files_recursive(char **array_of_filepaths, uint32_t num_of_filepaths, c
     }
 
     closedir(dir);
-    return 0;
 }
 
-int ark_list_files(char **array_of_filepaths, uint32_t num_of_filepaths, char *base_path) {
+PANIC void ark_list_files(char **array_of_filepaths, uint32_t num_of_filepaths, char *base_path) {
     uint32_t count = 0;
     list_files_recursive(array_of_filepaths, num_of_filepaths, base_path, &count);
-    assert(count == num_of_filepaths);
-    return count;
+    ARK_ASSERT(num_of_filepaths == count, 1, "expected %d but got %d", num_of_filepaths, count);
 }
 
-int list_file_sizes_recursive(size_t *array_of_lengths, uint32_t num_of_filepaths, char *base_path, uint32_t *internal_count) {
-    int _;
+PANIC void list_file_sizes_recursive(size_t *array_of_lengths, uint32_t num_of_filepaths, char *base_path, uint32_t *internal_count) {
     DIR *dir = opendir(base_path);
-    if (dir == NULL) {
-        perror(NULL);
-        return -1;
-    }
+    ARK_ASSERT(dir != NULL, 1, "opendir func failed for file %.*s", (int)strlen(base_path), base_path);
 
     struct dirent *entry = {0};
     struct stat statbuf = {0};
@@ -163,8 +151,7 @@ int list_file_sizes_recursive(size_t *array_of_lengths, uint32_t num_of_filepath
         boolean is_dir = (boolean)(stat(path_buffer, &statbuf) == 0 && S_ISDIR(statbuf.st_mode));
 
         if (is_dir) {
-            _ = list_file_sizes_recursive(array_of_lengths, num_of_filepaths, path_buffer, internal_count);
-            assert(_ != -1);
+            list_file_sizes_recursive(array_of_lengths, num_of_filepaths, path_buffer, internal_count);
         } else {
             array_of_lengths[*internal_count] = strlen(path_buffer) + 1;
             (*internal_count)++;
@@ -172,30 +159,26 @@ int list_file_sizes_recursive(size_t *array_of_lengths, uint32_t num_of_filepath
     }
 
     closedir(dir);
-    return 0;
 }
 
-int ark_list_file_sizes(size_t *array_of_lengths, uint32_t num_of_filepaths, char *base_path) {
+PANIC void ark_list_file_sizes(size_t *array_of_lengths, uint32_t num_of_filepaths, char *base_path) {
     uint32_t count = 0;
     list_file_sizes_recursive(array_of_lengths, num_of_filepaths, base_path, &count);
-    assert(count == num_of_filepaths);
-    return count;
+    ARK_ASSERT(num_of_filepaths == count, 1, "expected %d but got %d", num_of_filepaths, count);
 }
 
-size_t ark_get_file_size(char *filepath) {
-    long file_size = 0;
-
+PANIC void ark_get_file_size(uint64_t *file_size, char *filepath) {
     FILE *file = fopen(filepath, "r");
-    assert(file != NULL);
+    ARK_ASSERT(file != NULL, 1, "fopen func failed for file %.*s", (int)strlen(filepath), filepath);
     
-    assert(fseek(file, 0, SEEK_END) != -1);
-    file_size = ftell(file);
-    assert(file_size != -1);
-    rewind(file);
-    
-    fclose(file);
+    int res = fseek(file, 0, SEEK_END);
+    ARK_ASSERT(res != -1, 1, "fseek func failed for file %.*s", (int)strlen(filepath), filepath);
 
-    return (size_t)file_size;
+    *file_size = (uint64_t)ftell(file);
+    ARK_ASSERT(*file_size != -1, 1, "ftell func failed for file %.*s", (int)strlen(filepath), filepath);
+
+    rewind(file);
+    fclose(file);
 }
 
 int string_to_int(int *result, char *str, uint32_t length) {

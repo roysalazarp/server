@@ -193,6 +193,7 @@ void get_b(void *v) {
 }
 
 void test(void *v) {
+    char err[ERR_SIZE] = {0};
     RequestCtx *rctx = (RequestCtx *)v;
 
     uint32_t index = 0;
@@ -201,17 +202,38 @@ void test(void *v) {
     uint32_t component_length = strlen(component);
     assert(component_length);
 
-    uint32_t cindex;
+    char *rendering = malloc(sizeof(char) * component_length + 1);
+    // check for malloc error
+    memcpy(rendering, component, component_length + 1);
+    
+    // uint32_t times = 2;
+    // char *placeholders[1] = { "col_name" };
+    // char ***values = NULL;
+    // try_memory_alloc(err, (void **)&values, rctx->memory, times * sizeof(char **));
+    // for (int i = 0; i < times; i++) {
+    //     try_memory_alloc(err, (void **)&values[i], rctx->memory, 1 * sizeof(char *));
+    // }
+    // values[0][0] = strdup("col1");
+    // values[1][0] = strdup("col24");
 
-    uint32_t i;
-    for (i = 0; i < component_rendering_ctx_arr[index].length; i++) {
-        if (strncmp(component_rendering_ctx_arr[index].ctx_name_arr[i], "tables", strlen("tables")) == 0) {
-            cindex = i;
-            break;
-        }
+    // uint32_t new_length = 0;
+    // calc_rendered_length(err, &new_length, "col_names", placeholders, 1, values, times, component, component_length);
+    
+    uint32_t times = 1;
+    char *placeholders[2] = { "@@age", "@@name" };
+    char ***values = NULL;
+    try_memory_alloc(err, (void **)&values, rctx->memory, times * sizeof(char **));
+    for (int i = 0; i < times; i++) {
+        try_memory_alloc(err, (void **)&values[i], rctx->memory, 2 * sizeof(char *));
     }
-
-    uint64_t range = component_rendering_ctx_arr[i].ctx_arr[cindex];
+    values[0][0] = strdup("Roy");
+    values[0][1] = strdup("Salazar");
+    
+    // uint32_t new_length = 0;
+    // calc_rendered_length(err, &new_length, NULL, placeholders, 2, values, times, component, component_length);
+    
+    // rendering = realloc(rendering, new_length * sizeof(char) + 1);
+    // render_ctx_values(err, NULL, placeholders, 2, values, times, rendering, new_length);
 
     char response[KB(8)];
     bzero(response, KB(8));
@@ -353,8 +375,6 @@ int full_path(char *buffer, uint32_t buffer_size, char *relative_path) {
 
 int main() {
     setbuf(stdout, NULL);
-    
-    char err[ERR_SIZE] = {0};
 
     uint32_t i;
     int op_res;
@@ -388,14 +408,18 @@ int main() {
     for (i = 0; i < num_of_filepaths; i++) {
         char *filepath = array_of_filepaths[i];
         
-        size_t file_size = ark_get_file_size(filepath);
+        uint64_t file_size;
+        ark_get_file_size(&file_size, filepath);
         char *file_content = NULL;
         memory_alloc((void **)&file_content, &memory, file_size + 1);
             
         FILE *file = fopen(filepath, "r");
-        size_t read_size = fread(file_content, sizeof(char), file_size, file);
-        assert(read_size == file_size);
+        ARK_ASSERT(file != NULL, 1, "fopen func failed for file %.*s", (int)strlen(filepath), filepath);
+
+        uint64_t read_size = (uint64_t)fread(file_content, sizeof(char), file_size, file);
+        ARK_ASSERT(file_size == read_size, 1, "something wrong with size returned by fread, expected %d and got %d", (int)file_size, (int)read_size);
         file_content[file_size + 1] = '\0';
+
         fclose(file);
 
         array_of_file_contents[i] = file_content;

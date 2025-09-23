@@ -2,18 +2,18 @@
     <hhr class="foo">
         <div>
             <h1>
-                {{ age }} {{ name }}
+                @@age @@name
             </h1>
             <div>
-                <table for:tables>
+                <table ctx:tables>
                     <tr>
-                        <th for:col_names>
-                            {{ col_name }}
+                        <th ctx:col_names>
+                            @@col_name
                         </th>
                     </tr>
-                    <tr for:rows>
-                        <td for:cells>
-                            {{ cell }}
+                    <tr ctx:rows>
+                        <td ctx:cells>
+                            @@cell
                         </td>
                     </tr>
                 </table>

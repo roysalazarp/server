@@ -5,7 +5,7 @@
 #include "../../include/ark/utils.h"
 #include "../../include/ark/memory.h"
 
-fail_safe memory_init(Memory *memory, void *mem, uint64_t mem_size) {
+FAIL_SAFE void memory_init(Memory *memory, void *mem, uint64_t mem_size) {
     memset(mem, 0, mem_size);
 
     memory->size = (size_t)mem_size;
@@ -25,7 +25,7 @@ int try_memory_alloc(char *err, void **ptr, Memory *memory, uint64_t size) {
     return 0;
 }
 
-panic memory_alloc(void **ptr, Memory *memory, uint64_t size) {
+PANIC void memory_alloc(void **ptr, Memory *memory, uint64_t size) {
     ARK_ASSERT(!memory->in_use, 0, "Cannot allocate while the memory is in use");
     ARK_ASSERT((uint8_t *)memory->current + size <= (uint8_t *)memory->start + memory->size, 0, "Out of memory");
 

@@ -43,7 +43,7 @@ const char html_attr_key_token[256] = {
 };
 
 #define NAMELABEL       0x6E616D653A000000 /* "name:" */
-#define FORLABEL        0x666F723A /* "for:" */
+#define CTXLABEL        0x6374783A /* "ctx:" */
 
 #define XOPEN           0x3C782D00 /* "<x-"  */ 
 #define XCLOSE          0x3C2F782D /* "</x-"  */ 
@@ -54,30 +54,11 @@ const char html_attr_key_token[256] = {
 #define XUSE            0x782D757365000000 /* "x-use"  */
 #define XSLOT           0x782D736C6F740000 /* "x-slot" */
 #define XFILL           0x782D66696C6C0000 /* "x-fill" */
-#define XVAL            0x782D76616C000000 /* "x-val"  */
-#define XFOR            0x782D666F72000000 /* "x-for"  */
-
-typedef struct {
-    String name;
-    String value;
-} Attr;
-
-typedef struct {
-    Attr *attr;
-    uint32_t count;
-} AttrsArray;
 
 typedef struct {
     uint32_t start;
     uint32_t end;
 } Range;
-
-typedef struct {
-    uint8_t xdef;
-    uint8_t xuse;
-    uint8_t xfill;
-    uint8_t xfor;
-} OpenClose;
 
 typedef struct {
     uint8_t xdef;
@@ -98,18 +79,6 @@ typedef enum {
 } TokenKind;
 
 typedef enum  { TAG_INVALID, TAG_OPENING, TAG_CLOSING, TAG_SELFCLOSING } TagType;
-
-typedef struct {
-    TagType type;
-    Range markup;
-    uint32_t attr_start;
-} Tag;
-
-typedef struct {
-    TokenKind kind;
-    Tag tag; /* NOT used when TokenKind is TOKEN_PLACEHOLDER */
-    // uint64_t identifier; /* NOT used when TokenKind is TOKEN_PLACEHOLDER */
-} Token;
 
 typedef struct {
     TokenKind kind;
@@ -180,7 +149,11 @@ uint8_t strlen_u64(uint64_t x) {
     return count;
 }
 
-/* returns 1 if reached EOF */
+/* DON'T DELETE FOR NOW, MIGHT NEED IN THE FUTURE */
+typedef struct {
+    String name;
+    String value;
+} Attr;
 int parse_next_tag_attr(Attr *attr, char *html, uint32_t html_length, uint32_t *cursor) {    
     uint8_t attr_tk = 0;
     uint32_t str_start = 0;
@@ -498,83 +471,6 @@ int get_next_tag(String *tag, char *ptr, uint64_t identifier, TagType tag_type) 
     return -1;
 }
 
-int tag_attr_count(uint32_t *count, uint32_t attr_start, char *html, uint32_t html_length) {
-    assert(attr_start);
-
-    while (true) {
-        Attr attr = {0};
-        parse_next_tag_attr(&attr, html, html_length, &attr_start);
-
-        if (attr.name.data == NULL && attr.value.data == NULL) {
-            /** no more attrs */
-            break;
-        }
-        
-        (*count) += 1;
-    }
-
-    return 0;
-}
-
-int tag_attrs_lengths(uint32_t *names_lengths, uint32_t *values_lengths, uint32_t attr_count, uint32_t attr_start, char *html, uint32_t html_length) {
-    assert(attr_start);
-
-    uint32_t i;
-    for (i = 0; i < attr_count; i++) {
-        Attr attr = {0};
-        parse_next_tag_attr(&attr, html, html_length, &attr_start);
-
-        if (attr.name.data == NULL && attr.value.data == NULL) {
-            /** no more attrs */
-            break;
-        }
-
-        names_lengths[i] = attr.name.length + 1;
-        values_lengths[i] = attr.value.length + 1;
-    }
-
-    return 0;
-}
-
-int get_tag_attrs(AttrsArray *attrs_array, uint32_t attr_start, char *html, uint32_t html_length) {
-    assert(attr_start);
-
-    uint32_t i;
-    for (i = 0; i < attrs_array->count; i++) {
-        Attr attr = {0};
-        parse_next_tag_attr(&attr, html, html_length, &attr_start);
-
-        if (attr.name.data == NULL && attr.value.data == NULL) {
-            /** no more attrs */
-            break;
-        }
-
-        attrs_array->attr[i].name.length = attr.name.length;
-        memcpy(attrs_array->attr[i].name.data, attr.name.data, attr.name.length);
-        attrs_array->attr[i].name.data[attr.name.length] = '\0';
-        
-        attrs_array->attr[i].value.length = attr.value.length;
-        memcpy(attrs_array->attr[i].value.data, attr.value.data, attr.value.length);
-        attrs_array->attr[i].value.data[attr.value.length] = '\0';
-    }
-
-    return 0;
-}
-
-int locate_tag_name_attr(uint32_t *name_attr_index, AttrsArray *attrs_array) {
-    uint32_t i;
-    for (i = 0; i < attrs_array->count; i++) {
-
-        uint32_t attr_key = *(uint32_t *)(attrs_array->attr[i].name.data);
-        // if ((__builtin_bswap32(attr_key) & MASK32_4) == NAMELABEL && attrs_array->attr[i].name.length == 4) {
-        //     *name_attr_index = i;
-        //     return 0;
-        // }
-    }
-    
-    return -1;
-}
-
 int get_xtag(Xtag *t, char *html, uint32_t html_length, uint32_t *cursor) {
     uint32_t tk = *(uint32_t *)(html + (*cursor));
     
@@ -643,97 +539,6 @@ int get_xtag(Xtag *t, char *html, uint32_t html_length, uint32_t *cursor) {
             (*cursor)++;
             c = html[*cursor];
         }
-    }
-
-    return 0;
-}
-
-int get_token(Token *next_token, char *html, uint32_t html_length, uint32_t *cursor) {
-    uint32_t tk = *(uint32_t *)(html + (*cursor));
-    
-    if ((__builtin_bswap32(tk) & MASK32_2) == DOCB) {
-        next_token->tag.markup.start = (*cursor);
-        next_token->kind = TOKEN_PLACEHOLDER;
-
-        while (true) {
-            if (++(*cursor) == html_length) {
-                next_token->kind = TOKEN_END;
-                return 1;
-            }
-            
-            uint32_t dccb = *(uint32_t *)(html + (*cursor));
-            if ((__builtin_bswap32(dccb) & MASK32_2) == DCCB) {
-                (*cursor) += 2;
-                next_token->tag.markup.end = (*cursor);
-                break;
-            }
-        }
-
-        return 0;
-    }
-
-    if ((__builtin_bswap32(tk) & MASK32_3) == XOPEN) {
-        next_token->tag.markup.start = (*cursor);
-        (*cursor) += 1;
-        
-        uint64_t kind = *(uint64_t *)(html + (*cursor));
-
-        TokenType tt = token_type(kind);
-        next_token->kind = tt.kind;
-        // next_token->identifier = tt.identifier;
-
-        (*cursor) += strlen_u64(tt.identifier);
-
-        next_token->tag.attr_start = *cursor;
-
-        /** skip attributes */
-        while (true) {
-            Attr attr = {0};
-            parse_next_tag_attr(&attr, html, html_length, cursor);
-
-            if (attr.name.data == NULL && attr.value.data == NULL) {
-                /** no more attrs */
-                break;
-            }
-        }
-
-        uint8_t ch = html[(*cursor)];
-        uint8_t prev_ch = html[(*cursor) - 1];
-        
-        assert(ch == '>');
-
-        if (prev_ch == '/') {
-            next_token->tag.type = TAG_SELFCLOSING;
-            (*cursor)++; /* skip '>' */
-            next_token->tag.markup.end = (*cursor);
-        } else {
-            next_token->tag.type = TAG_OPENING;
-            (*cursor)++; /* skip '>' */
-            next_token->tag.markup.end = (*cursor);
-        }
-    } else if ((__builtin_bswap32(tk) & MASK32_4) == XCLOSE) {
-        next_token->tag.markup.start = (*cursor);
-        (*cursor) += 2;
-
-        uint64_t kind = *(uint64_t *)(html + (*cursor));
-
-        TokenType tt = token_type(kind);
-        next_token->kind = tt.kind;
-        // next_token->identifier = tt.identifier;
-
-        (*cursor) += strlen_u64(tt.identifier);
-
-        int r = skip_whitespace(html, html_length, &(*cursor));
-        if (r == 1) {
-            next_token->kind = TOKEN_END;
-            return 1;
-        }
-
-        assert(html[(*cursor)] == '>');
-
-        next_token->tag.type = TAG_CLOSING;
-        (*cursor)++; /* skip '>' */
-        next_token->tag.markup.end = (*cursor);
     }
 
     return 0;
@@ -969,7 +774,7 @@ int ark_templates_count(uint32_t *count, uint32_t *html_file_mask, char **array_
     return 0;
 }
 
-int ark_make_html_file_mask(uint32_t *html_file_mask, char **array_of_filepaths, uint32_t array_length) {
+FAIL_SAFE void ark_make_html_file_mask(uint32_t *html_file_mask, char **array_of_filepaths, uint32_t array_length) {
     uint32_t i;
     for (i = 0; i < array_length; i++) {
         char *file_path = array_of_filepaths[i];
@@ -980,8 +785,6 @@ int ark_make_html_file_mask(uint32_t *html_file_mask, char **array_of_filepaths,
             TURN_ON_U32_BIT(html_file_mask, i);
         }
     }
-
-    return 0;
 }
 
 int ark_validate_templates(uint32_t *html_file_mask, char **array_of_filepaths, char **file_content_array, uint32_t array_length) {
@@ -1144,169 +947,6 @@ int ark_validate_templates(uint32_t *html_file_mask, char **array_of_filepaths, 
             }
             if (open_tags_count.xfill) {
                 assert(0 && "forgot to close open_tags_count.xfill amount of xfill tag\n");
-            }
-        }
-    }
-
-    return 0;
-}
-
-
-/*
-- Error if x-slot are not self-closing.
-- Error if x-def, x-fill do not have a pair (open + closing) xtags.
-
-- Error if x-def has a parent.
-- Error if x-fill has other parent than x-use.
-- Error if x-use has other child than x-fill.
-
-- Error if any opening or self-closing xtag does not have a name attribute.
-- Error if any xtag except x-use opening or self-closing has more than the name attribute.
-
-- Error if recursive import.
-*/
-int ark_validate_templates_old(uint32_t *html_file_mask, char **array_of_filepaths, char **file_content_array, uint32_t array_length) {
-    uint32_t i;
-
-    for (i = 0; i < array_length; i++) {
-        if (IS_U32_BIT_OFF(html_file_mask, i)) {
-            continue;
-        }
-
-        char *file_path = array_of_filepaths[i];
-        char *file_content = file_content_array[i];
-
-        Lexer lexer = {0};
-
-        lexer.file_path.data = file_path;
-        lexer.file_path.length = strlen(file_path);
-        lexer.file_content.data = file_content;
-        lexer.file_content.length = strlen(file_content);
-        lexer.cursor = 0;
-        lexer.bol = 0;
-        lexer.line_number = 1;
-
-        OpenClose oc = {0};
-        boolean inside_xuse = false;
-
-        while (lexer.cursor < lexer.file_content.length) {
-            Token nt = {0};
-
-            get_token(&nt, lexer.file_content.data, lexer.file_content.length, &lexer.cursor);
-
-            switch (nt.kind) {
-                case TOKEN_END: {
-                    break;
-                }
-                case TOKEN_INVALID: {
-                    break;
-                }
-                case TOKEN_PLACEHOLDER: {
-                    break;
-                }
-                case TOKEN_XDEF: {
-                    if (nt.tag.type == TAG_OPENING) {
-                        if (oc.xdef) {
-                            assert(0);
-                        }
-                        if (inside_xuse) {
-                            assert(0);
-                            /* Error: x-use can only have direct child x-fill */
-                            inside_xuse = false;
-                        }
-                        oc.xdef += 1;
-                    } else if (nt.tag.type == TAG_CLOSING) {
-                        oc.xdef -= 1;
-                    }
-                    break;
-                }
-                case TOKEN_XUSE: {
-                    if (nt.tag.type == TAG_OPENING) {
-                        oc.xuse += 1;
-                        if (inside_xuse) {
-                            assert(0);
-                            /* Error: x-use can only have direct child x-fill */
-                        }
-                        inside_xuse = true;
-                    } else if (nt.tag.type == TAG_CLOSING) {
-                        oc.xuse -= 1;
-                        inside_xuse = false;
-                    }
-                    break;
-                }
-                case TOKEN_XSLOT: {
-                    if (nt.tag.type != TAG_SELFCLOSING) {
-                        /* print error! */
-                        assert(0);
-                    }
-                    if (inside_xuse) {
-                        assert(0);
-                        /* Error: x-use can only have direct child x-fill */
-                    }
-                    break;
-                }
-                case TOKEN_XFILL: {
-                    if (nt.tag.type == TAG_OPENING) {
-                        oc.xfill += 1;
-                        if (!inside_xuse) {
-                            assert(0);
-                            /* Error: x-fill must be first child of x-use */
-                        }
-                        inside_xuse = false;
-                    } else if (nt.tag.type == TAG_CLOSING) {
-                        oc.xfill -= 1;
-                        inside_xuse = true;
-                    }
-                    break;
-                }
-                // case TOKEN_XVAL: {
-                //     if (nt.tag.type != TAG_SELFCLOSING) {
-                //         /* print error! */
-                //         assert(0);
-                //     }
-                //     if (inside_xuse) {
-                //         assert(0);
-                //         /* Error: x-use can only have direct child x-fill */
-                //     }
-                //     break;
-                // }
-                // case TOKEN_XFOR: {
-                //     if (nt.tag.type == TAG_OPENING) {
-                //         oc.xfor += 1;
-                //         if (inside_xuse) {
-                //             assert(0);
-                //             /* Error: x-use can only have direct child x-fill */
-                //             inside_xuse = false;
-                //         }
-                //     } else if (nt.tag.type == TAG_CLOSING) {
-                //         oc.xfor -= 1;
-                //     }
-                //     break;
-                // }
-                default: {
-                    break;
-                }
-            }
-
-            lexer.cursor++;
-        }
-    
-        if (oc.xdef | oc.xuse | oc.xfill | oc.xfor) {
-            if (oc.xdef) {
-                assert(0);
-                /* print error: forgot to close oc.xdef amount of xdef tag */
-            }
-            if (oc.xuse) {
-                assert(0);
-                /* print error: forgot to close oc.xuse amount of xuse tag */
-            }
-            if (oc.xfill) {
-                assert(0);
-                /* print error: forgot to close oc.xfill amount of xfill tag */
-            }
-            if (oc.xfor) {
-                assert(0);
-                /* print error: forgot to close oc.xfor amount of xfor tag */
             }
         }
     }
@@ -1521,287 +1161,6 @@ int compile_template(char *rendering, char **template_name_array, char **templat
     return 0;
 }
 
-int compile_template_old(char *rendering, char **template_name_array, char **template_content_array, uint32_t template_count) {
-    Lexer lexer = {0};
-    lexer.file_content.data = rendering;
-    lexer.cursor = 0;
-
-    String import = {0};
-    uint32_t import_cursor = 0;
-
-    uint32_t saved_location = 0;
-    
-    uint32_t xfill_count = 0;
-    
-    AttrsArray attrs_array = {0};
-    boolean attrs_array_in_use = false;
-    uint32_t name_attr_index = 0;
-    uint32_t attrs_rendered = 0;
-
-    go_again:;
-    boolean repeat = false;
-    
-    while (lexer.file_content.data[lexer.cursor]) {
-        Token nt = {0};
-
-        get_token(&nt, lexer.file_content.data, lexer.file_content.length, &lexer.cursor);
-
-        if (nt.kind == TOKEN_XUSE && nt.tag.type != TAG_CLOSING && !attrs_array_in_use) {
-            uint32_t attr_count = 0;
-            tag_attr_count(&attr_count, nt.tag.attr_start, lexer.file_content.data, lexer.file_content.length);
-            
-            uint32_t *names_lengths = malloc(attr_count * sizeof(uint32_t));
-            uint32_t *values_lengths = malloc(attr_count * sizeof(uint32_t));
-            tag_attrs_lengths(names_lengths, values_lengths, attr_count, nt.tag.attr_start, lexer.file_content.data, lexer.file_content.length);
-            
-            attrs_array.count = attr_count;
-            attrs_array.attr = malloc(attr_count * sizeof(Attr));
-
-            uint32_t j;
-
-            for (j = 0; j < attr_count; j++) {
-                attrs_array.attr[j].name.data = malloc(names_lengths[j] * sizeof(char));
-                attrs_array.attr[j].value.data = malloc(values_lengths[j] * sizeof(char));
-            }
-
-            free(names_lengths);
-            free(values_lengths);
-
-            get_tag_attrs(&attrs_array, nt.tag.attr_start, lexer.file_content.data, lexer.file_content.length);
-            locate_tag_name_attr(&name_attr_index, &attrs_array);
-
-            if (attr_count > 1) {
-                attrs_array_in_use = true;
-            }
-        }
-
-        if (nt.kind == TOKEN_XUSE) {
-            repeat = true;
-        }
-
-        switch (nt.kind) {
-            // case TOKEN_PLACEHOLDER: {
-            //     String name = {0};
-
-            //     char *p = lexer.file_content.data + nt.tag.markup.start;
-            //     p += 2; /** skip "{{" */
-            //     uint32_t whitespace_count = 0;
-            //     skip_whitespace(p, 0, &whitespace_count);
-            //     p += whitespace_count;
-
-            //     name.data = p;
-            //     while (!isspace(*p)) {
-            //         name.length++;
-            //         p++;
-            //     }
-                
-            //     uint32_t j;
-            //     for (j = 0; j < attrs_array.count; j++) {
-            //         if (strncmp(attrs_array.attr[j].name.data, name.data, name.length) == 0) {
-            //             Range placeholder = nt.tag.markup;
-                    
-            //             char *insert_location = lexer.file_content.data + placeholder.start;
-                        
-            //             size_t substring_to_remove_length = placeholder.end - placeholder.start;
-
-            //             char *substring_to_insert = attrs_array.attr[j].value.data;
-            //             size_t substring_to_insert_length = attrs_array.attr[j].value.length;
-
-            //             {
-            //                 /** Expand/Shrink space where new substring will inserted so it fits perfectly */
-            //                 char *dest = insert_location + substring_to_insert_length;
-            //                 char *src = insert_location + substring_to_remove_length;
-            //                 size_t chunk_length = strlen(lexer.file_content.data + placeholder.end) + 1;
-            //                 memmove(dest, src, chunk_length);
-            //             }
-
-            //             memcpy(insert_location, substring_to_insert, substring_to_insert_length);
-            //             attrs_rendered++;
-
-            //             if (attrs_rendered == attrs_array.count) {
-            //                 uint32_t k;
-            //                 for (k = 0; k < attrs_array.count; k++) {
-            //                     free(attrs_array.attr[k].name.data);
-            //                     attrs_array.attr[k].name.data = NULL;
-            //                     free(attrs_array.attr[k].value.data);
-            //                     attrs_array.attr[k].value.data = NULL;
-            //                 }
-                            
-            //                 free(attrs_array.attr);
-            //                 attrs_array.attr = NULL;
-                            
-            //                 bzero(&attrs_array, sizeof(AttrsArray));
-            //                 attrs_rendered = 0;
-
-            //                 name_attr_index = 0;
-            //                 attrs_array_in_use = false;
-            //             }
-
-            //             break;
-            //         }
-            //     }
-
-            //     printf("\n");
-
-            //     break;
-            // }
-            case TOKEN_XUSE: {
-                if (xfill_count) {
-                    break;
-                }
-
-                uint32_t j;
-                for (j = 0; j < template_count; j++) {
-                    char *name = template_name_array[j];
-                    uint32_t name_length = strlen(name);
-
-                    String attr_value = attrs_array.attr[name_attr_index].value;
-                    
-                    if (strncmp(name, attr_value.data, attr_value.length) == 0 && name_length == attr_value.length) {
-                        import.data = template_content_array[j];
-                        import.length = strlen(template_content_array[j]);
-                        break;
-                    }
-                }
-                
-                if (nt.tag.type == TAG_SELFCLOSING) {                                                
-                    Range tag_markup = nt.tag.markup;
-                    
-                    saved_location = tag_markup.start;
-
-                    char *insert_location = lexer.file_content.data + tag_markup.start;
-                    
-                    size_t substring_to_remove_length = tag_markup.end - tag_markup.start;
-
-                    char *substring_to_insert = import.data;
-                    size_t substring_to_insert_length = import.length;
-
-                    {
-                        /** Expand/Shrink space where new substring will inserted so it fits perfectly */
-                        char *dest = insert_location + substring_to_insert_length;
-                        char *src = insert_location + substring_to_remove_length;
-                        size_t chunk_length = strlen(lexer.file_content.data + tag_markup.end) + 1;
-                        memmove(dest, src, chunk_length);
-                    }
-
-                    memcpy(insert_location, substring_to_insert, substring_to_insert_length);
-
-                    lexer.cursor = tag_markup.start;
-                }
-
-                if (nt.tag.type == TAG_OPENING) {
-                    Range opening_tag_markup = nt.tag.markup;
-
-                    saved_location = opening_tag_markup.start;
-                        
-                    char *dest = lexer.file_content.data + opening_tag_markup.start;
-                    char *src = lexer.file_content.data + opening_tag_markup.end;
-                    size_t chunk_length = strlen(src) + 1;
-                    memmove(dest, src, chunk_length);
-
-                    lexer.cursor = opening_tag_markup.start;
-                }
-
-                if (nt.tag.type == TAG_CLOSING) {
-                    Range closing_tag_markup = nt.tag.markup;
-                    
-                    char *insert_location = lexer.file_content.data + closing_tag_markup.start;
-                    
-                    size_t substring_to_remove_length = closing_tag_markup.end - closing_tag_markup.start;
-
-                    char *substring_to_insert = import.data + import_cursor;
-                    size_t substring_to_insert_length = import.length - import_cursor;
-
-                    {
-                        /** Expand/Shrink space where new substring will inserted so it fits perfectly */
-                        char *dest = insert_location + substring_to_insert_length;
-                        char *src = insert_location + substring_to_remove_length;
-                        size_t chunk_length = strlen(lexer.file_content.data + closing_tag_markup.end) + 1;
-                        memmove(dest, src, chunk_length);
-                    }
-
-                    memcpy(insert_location, substring_to_insert, substring_to_insert_length);
-                    
-                    lexer.cursor = saved_location;
-                    
-                    bzero(&import, sizeof(String));
-                    import_cursor = 0;
-                    saved_location = 0;
-
-                    attrs_array_in_use = false;
-                }
-
-                break;
-            }
-            case TOKEN_XFILL: {
-                if (nt.tag.type == TAG_OPENING) {
-                    if (xfill_count == 0) {
-                        Range opening_tag_markup = nt.tag.markup;
-                    
-                        char *insert_location = lexer.file_content.data + opening_tag_markup.start;
-                        
-                        size_t substring_to_remove_length = opening_tag_markup.end - opening_tag_markup.start;
-
-                        char *substring_to_insert = (import.data + import_cursor);
-                        String xslot_selfclosing_tag = {0};
-                        get_next_tag(&xslot_selfclosing_tag, (import.data + import_cursor), XSLOT, TAG_SELFCLOSING);
-                        size_t substring_to_insert_length = xslot_selfclosing_tag.data - substring_to_insert;
-
-                        import_cursor += substring_to_insert_length + xslot_selfclosing_tag.length;
-
-                        {
-                            /* Expand/Shrink space where new substring will inserted so it fits perfectly */
-                            char *dest = insert_location + substring_to_insert_length;
-                            char *src = insert_location + substring_to_remove_length;
-                            size_t chunk_length = strlen(lexer.file_content.data + opening_tag_markup.end) + 1;
-                            memmove(dest, src, chunk_length);
-                        }
-
-                        memcpy(insert_location, substring_to_insert, substring_to_insert_length);
-
-
-                        saved_location = (insert_location + substring_to_insert_length) - lexer.file_content.data;
-                        lexer.cursor = saved_location;
-                    }
-
-                    xfill_count++;
-                }
-                
-                if (nt.tag.type == TAG_CLOSING) {
-                    xfill_count--;
-
-                    if (xfill_count == 0) {
-                        Range closing_tag_markup = nt.tag.markup;
-
-                        char *dest = lexer.file_content.data + closing_tag_markup.start;
-                        char *src = lexer.file_content.data + closing_tag_markup.end;
-                        size_t chunk_length = strlen(src) + 1;
-                        memmove(dest, src, chunk_length);
-
-                        lexer.cursor -= 1;
-                    }
-                }
-            }
-            default: {
-                break;
-            }
-        }
-
-        lexer.cursor++;
-    }
-
-    if (repeat) {
-        lexer.cursor = 0;
-        xfill_count = 0;
-        
-        goto go_again;
-    }
-    
-    rendering[lexer.cursor] = '\0';
-
-    return 0;
-}
-
 int ark_get_compile_templates_lengths(uint32_t *compiled_templates_lengths, char **template_name_array, char **template_content_array, uint32_t template_count) {    
     uint64_t mem_size = PAGE_SIZE * 5;
     void *mem = mmap(NULL, (size_t)mem_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
@@ -1841,20 +1200,6 @@ int ark_compile_templates(char **compiled_template_content_array, char **templat
     return 0;
 }
 
-/*
-
-LEFT OFF HERE!
-
-count the amount of :for and for each for have a Range (start, end), for rendering you 
-pick the for you want to render in the order you want and when rendering that for if you are 
-rendering the amount of iterations the renderer basically multiplies the code section by the 
-amount of times you want, if you are rendering the repleaceable from a for the renderer
-will take care of understanding when its out of the current for scope and when its inside so 
-it doesnt render a repleaceable outside if the current for scope. So we are not really using
-a tree but a array.
-
-*/
-
 int ark_count_template_rendering_ctx_amount(uint32_t *template_rendering_ctx_count, char **template_content_array, uint32_t template_count) {
     uint32_t i;
     for (i = 0; i < template_count; i++) {
@@ -1865,7 +1210,7 @@ int ark_count_template_rendering_ctx_amount(uint32_t *template_rendering_ctx_cou
         
         uint32_t x = *(uint32_t *)(component + cursor);
         for (;;) {
-            if ((__builtin_bswap32(x) & MASK32_4) == FORLABEL) {
+            if ((__builtin_bswap32(x) & MASK32_4) == CTXLABEL) {
                 template_rendering_ctx_count[i] += 1;
             }
 
@@ -1889,8 +1234,8 @@ int ark_get_single_template_rendering_ctx_lengths_info(uint32_t *ctx_names_lengt
 
     uint32_t x = *(uint32_t *)(template_content + cursor);
     for (;;) {
-        if ((__builtin_bswap32(x) & MASK32_4) == FORLABEL) {
-            cursor += strlen_u32(FORLABEL); /* skip "for:" */
+        if ((__builtin_bswap32(x) & MASK32_4) == CTXLABEL) {
+            cursor += strlen_u32(CTXLABEL); /* skip "ctx:" */
 
             char c = template_content[cursor];
             for (;;) {
@@ -2042,8 +1387,8 @@ int ark_get_single_template_rendering_ctx(char **ctx_names, uint64_t *ctx_arr, u
 
     uint32_t x = *(uint32_t *)(template_content + cursor);
     for (;;) {
-        if ((__builtin_bswap32(x) & MASK32_4) == FORLABEL) {
-            cursor += strlen_u32(FORLABEL); /* skip "for:" */
+        if ((__builtin_bswap32(x) & MASK32_4) == CTXLABEL) {
+            cursor += strlen_u32(CTXLABEL); /* skip "ctx:" */
 
             char c;
             
@@ -2107,4 +1452,190 @@ int ark_get_single_template_rendering_ctx(char **ctx_names, uint64_t *ctx_arr, u
     return 0;
 }
 
+int is_ctx_range(char *err, uint32_t *start, uint32_t *end, char *ctxname, uint32_t cursor, char *component, uint32_t component_length) {
+    uint32_t x = *(uint32_t *)(component + cursor);
 
+    if ((__builtin_bswap32(x) & MASK32_4) == CTXLABEL) {
+        cursor += strlen_u32(CTXLABEL); /* skip "ctx:" */
+
+        char c;
+
+        char *name = component + cursor;
+        uint32_t name_length = 0;
+
+        c = component[cursor];
+        for (;;) {
+            if (c == '>' || (c == '/' && component[cursor + 1] == '>') || isspace(c)) {
+                break;
+            }
+
+            if (cursor == component_length) {
+                assert(0);
+                return -1;
+            }
+
+            name_length++;
+            cursor++;
+            c = component[cursor];
+        }
+
+        if (ctxname == NULL) goto find_range;            
+        if (strncmp(ctxname, name, name_length) == 0 && strlen(ctxname) == name_length) {
+            goto find_range;
+        } else {
+            return 0;
+        }
+        
+        find_range:;
+        c = component[cursor];
+        for (;;) {
+            if (c == '<') {
+                break;
+            }
+
+            if (cursor == 0) {
+                assert(0);
+                return -1;
+            }
+
+            cursor--;
+            c = component[cursor];
+        }
+
+        *start = cursor;
+        get_html_context_end(end, cursor, component, component_length);
+    }
+
+    return 0;
+}
+
+int get_ctx_range(char *err, uint32_t *start, uint32_t *end, char *ctxname, uint32_t start_pos, char *component, uint32_t component_length) {
+    // uint64_t *ctx_arr -> high 32bits for start, low 32bits for end
+
+    uint32_t cursor = (start_pos ? start_pos : 0);
+
+    uint32_t x = *(uint32_t *)(component + cursor);
+    for (;;) {
+        uint32_t _start = 0;
+        uint32_t _end = 0;
+        is_ctx_range(err, &_start, &_end, ctxname, cursor, component, component_length);
+        if (_start && _end) {
+            *start = _start;
+            *end = _end;
+            return 0;
+        }
+
+        if (cursor == component_length) {
+            break;
+        }
+        
+        cursor++;
+    }
+
+    return 0;
+}
+
+int calc_rendered_length(char *err, uint32_t *new_length, char *ctxname, char **placeholders, uint32_t placeholders_count, char ***values, uint32_t times, char *component, uint32_t component_length) {
+    CHECK_ERR(times >= 1, "times must be >=1 and currently is %d", times);
+
+    uint32_t i;
+    uint32_t j;
+
+    uint32_t start;
+    uint32_t end;
+    if (ctxname == NULL) {
+        CHECK_ERR(times == 1, "When ctxname == NULL, times must be 1");
+        start = 0;
+        end = component_length;
+    } else {
+        PROPAGATE_ERR(get_ctx_range(err, &start, &end, ctxname, 0, component, component_length), "");
+    }
+
+    uint32_t block_length = end - start;
+    uint32_t rendered_block_length = 0;
+
+    // it is assumed that placeholders and values 2d arrays are in order
+    for (i = 0; i < times; i++) {
+        rendered_block_length += block_length;
+        for (j = 0; j < placeholders_count; j++) {
+            rendered_block_length -= strlen(placeholders[j]);
+            rendered_block_length += strlen(values[i][j]);
+        }
+    }
+
+    *new_length = (component_length - block_length) + rendered_block_length;
+
+    return 0;
+}
+
+int render_ctx_values(char *err, char *ctxname, char **placeholders, uint32_t placeholders_count, char ***values, uint32_t times, char *component, uint32_t component_length) {
+    CHECK_ERR(times >= 1, "times must be >=1 and currently is %d", times);
+    
+    uint32_t cursor_start = 0;
+
+    uint32_t start;
+    uint32_t end;
+    if (ctxname == NULL) {
+        CHECK_ERR(times == 1, "When ctxname == NULL, times must be 1");
+        start = 0;
+        end = component_length;
+    } else {
+        PROPAGATE_ERR(get_ctx_range(err, &start, &end, ctxname, cursor_start, component, component_length), "");
+    }
+
+    uint32_t new_length = component_length;
+
+    uint32_t next_range_start;
+    uint32_t next_range_end;
+    get_ctx_range(err, &next_range_start, &next_range_end, NULL, start, component, end);
+
+    uint32_t cursor = 0;
+    char c = component[cursor];
+    for (;;) {
+        if ((cursor > start) && (cursor < end)) {
+            if (next_range_start && cursor > next_range_end) {
+                get_ctx_range(err, &next_range_start, &next_range_end, NULL, start, component, end);
+            }
+            
+            if ((cursor > next_range_start) && (cursor < next_range_end)) {
+                // printf("x");
+            } else {
+                // try to replace if you find some to replace
+                if (c == '@' && component[cursor + 1] == '@') {
+                    uint32_t i;
+                    for (i = 0; i < placeholders_count; i++) {
+                        if (strncmp(component + cursor, placeholders[i], strlen(placeholders[i])) == 0) {
+                            char *curr = placeholders[i] + 1;
+                            uint32_t curr_length = strlen(placeholders[i]);
+                            
+                            char *new = values[0][i];
+                            uint32_t new_length = strlen(values[0][i]);
+                        
+                            char *insert_location = component + cursor -1;
+
+                            // replace
+                            char *dest = insert_location + new_length;
+                            char *src = insert_location + curr_length;
+                            size_t chunk_length = strlen(component + cursor + curr_length) + 1;
+                            memmove(dest, src, chunk_length);
+
+                            memcpy(insert_location, new, new_length);
+                        }
+                    }
+                }
+            }
+        }
+
+        if (cursor == new_length) {
+            break;
+        }
+        
+        cursor++;
+        c = component[cursor];
+    }
+
+    printf("%s\n", component);
+    printf("hello world!\n");
+
+    return 0;
+}
