@@ -1200,78 +1200,78 @@ int ark_compile_templates(char **compiled_template_content_array, char **templat
     return 0;
 }
 
-int ark_count_template_rendering_ctx_amount(uint32_t *template_rendering_ctx_count, char **template_content_array, uint32_t template_count) {
-    uint32_t i;
-    for (i = 0; i < template_count; i++) {
-        uint32_t cursor = 0;
+// int ark_count_template_rendering_ctx_amount(uint32_t *template_rendering_ctx_count, char **template_content_array, uint32_t template_count) {
+//     uint32_t i;
+//     for (i = 0; i < template_count; i++) {
+//         uint32_t cursor = 0;
 
-        char *component = template_content_array[i];
-        uint32_t component_length = strlen(component);
+//         char *component = template_content_array[i];
+//         uint32_t component_length = strlen(component);
         
-        uint32_t x = *(uint32_t *)(component + cursor);
-        for (;;) {
-            if ((__builtin_bswap32(x) & MASK32_4) == CTXLABEL) {
-                template_rendering_ctx_count[i] += 1;
-            }
+//         uint32_t x = *(uint32_t *)(component + cursor);
+//         for (;;) {
+//             if ((__builtin_bswap32(x) & MASK32_4) == CTXLABEL) {
+//                 template_rendering_ctx_count[i] += 1;
+//             }
 
-            if (cursor == component_length) {
-                break;
-            }
+//             if (cursor == component_length) {
+//                 break;
+//             }
             
-            cursor++;
-            x = *(uint32_t *)(component + cursor);
-        }
-    }
+//             cursor++;
+//             x = *(uint32_t *)(component + cursor);
+//         }
+//     }
 
-    return 0;
-}
+//     return 0;
+// }
 
 
-int ark_get_single_template_rendering_ctx_lengths_info(uint32_t *ctx_names_lengths, uint32_t ctx_arr_length, char *template_content, uint32_t template_content_length) {
-    uint32_t cursor = 0;
+// int ark_get_single_template_rendering_ctx_lengths_info(uint32_t *ctx_names_lengths, uint32_t ctx_arr_length, char *template_content, uint32_t template_content_length) {
+//     uint32_t cursor = 0;
     
-    uint32_t count = 0;
+//     uint32_t count = 0;
 
-    uint32_t x = *(uint32_t *)(template_content + cursor);
-    for (;;) {
-        if ((__builtin_bswap32(x) & MASK32_4) == CTXLABEL) {
-            cursor += strlen_u32(CTXLABEL); /* skip "ctx:" */
+//     uint32_t x = *(uint32_t *)(template_content + cursor);
+//     for (;;) {
+//         if ((__builtin_bswap32(x) & MASK32_4) == CTXLABEL) {
+//             cursor += strlen_u32(CTXLABEL); /* skip "ctx:" */
 
-            char c = template_content[cursor];
-            for (;;) {
-                if (c == '>' || (c == '/' && template_content[cursor + 1] == '>') || isspace(c)) {
-                    break;
-                }
+//             char c = template_content[cursor];
+//             for (;;) {
+//                 if (c == '>' || (c == '/' && template_content[cursor + 1] == '>') || isspace(c)) {
+//                     break;
+//                 }
 
-                if (cursor == template_content_length) {
-                    assert(0);
-                    return -1;
-                }
+//                 if (cursor == template_content_length) {
+//                     assert(0);
+//                     return -1;
+//                 }
 
-                ctx_names_lengths[count]++;
-                cursor++;
-                c = template_content[cursor];
-            }
+//                 ctx_names_lengths[count]++;
+//                 cursor++;
+//                 c = template_content[cursor];
+//             }
             
-            count++;
-        }
+//             count++;
+//         }
 
-        if (cursor == template_content_length) {
-            break;
-        }
+//         if (cursor == template_content_length) {
+//             break;
+//         }
         
-        cursor++;
-        x = *(uint32_t *)(template_content + cursor);
-    }
+//         cursor++;
+//         x = *(uint32_t *)(template_content + cursor);
+//     }
 
-    if (count != ctx_arr_length) {
-        assert(0);
-    }
+//     if (count != ctx_arr_length) {
+//         assert(0);
+//     }
 
-    return 0;
-}
+//     return 0;
+// }
 
-int get_html_context_end(uint32_t *end, uint32_t start, char *html, uint32_t html_length) {
+int get_html_context_end(uint32_t *end, uint32_t *end1, uint32_t start, char *html, uint32_t html_length) {
     if (html[start] != '<') assert(0);
     if (html[start + 1] == '/') assert(0 && "You must give an opening or selfclosing tag, not a closing tag");
 
@@ -1304,6 +1304,7 @@ int get_html_context_end(uint32_t *end, uint32_t start, char *html, uint32_t htm
         if (c == '>') {
             if (prev == '/') {
                 *end = cursor;
+                *end1 = cursor;
                 return 0;
             }
 
@@ -1342,6 +1343,7 @@ int get_html_context_end(uint32_t *end, uint32_t start, char *html, uint32_t htm
             if (open_of_the_same_type) {
                 open_of_the_same_type--;
             } else {
+                *end1 = cursor;
                 cursor += close_length;
                 
                 c = html[cursor];
@@ -1362,6 +1364,9 @@ int get_html_context_end(uint32_t *end, uint32_t start, char *html, uint32_t htm
                 cursor++; /** pass '>' */
 
                 *end = cursor;
+
+                free(open);
+                free(close);
                 return 0;
             }
         }
@@ -1378,105 +1383,121 @@ int get_html_context_end(uint32_t *end, uint32_t start, char *html, uint32_t htm
     return -1;
 }
 
-int ark_get_single_template_rendering_ctx(char **ctx_names, uint64_t *ctx_arr, uint32_t ctx_arr_length, char *template_content, uint32_t template_content_length) {
-    // uint64_t *ctx_arr -> high 32bits for start, low 32bits for end
+// int ark_get_single_template_rendering_ctx(char **ctx_names, uint64_t *ctx_arr, uint32_t ctx_arr_length, char *template_content, uint32_t template_content_length) {
+//     // uint64_t *ctx_arr -> high 32bits for start, low 32bits for end
 
-    uint32_t cursor = 0;
+//     uint32_t cursor = 0;
     
-    uint32_t count = 0;
+//     uint32_t count = 0;
 
-    uint32_t x = *(uint32_t *)(template_content + cursor);
-    for (;;) {
-        if ((__builtin_bswap32(x) & MASK32_4) == CTXLABEL) {
-            cursor += strlen_u32(CTXLABEL); /* skip "ctx:" */
+//     uint32_t x = *(uint32_t *)(template_content + cursor);
+//     for (;;) {
+//         if ((__builtin_bswap32(x) & MASK32_4) == CTXLABEL) {
+//             cursor += strlen_u32(CTXLABEL); /* skip "ctx:" */
 
-            char c;
+//             char c;
             
-            uint32_t tmp = cursor;
+//             uint32_t tmp = cursor;
 
-            c = template_content[tmp];
-            for (;;) {
-                if (c == '<') {
-                    break;
-                }
+//             c = template_content[tmp];
+//             for (;;) {
+//                 if (c == '<') {
+//                     break;
+//                 }
 
-                if (tmp == 0) {
-                    assert(0);
-                    return -1;
-                }
+//                 if (tmp == 0) {
+//                     assert(0);
+//                     return -1;
+//                 }
 
-                tmp--;
-                c = template_content[tmp];
-            }
+//                 tmp--;
+//                 c = template_content[tmp];
+//             }
 
-            ctx_arr[count] = (uint64_t)tmp << 32;
-            uint32_t end = 0;
-            get_html_context_end(&end, tmp, template_content, template_content_length);
-            ctx_arr[count] |= end;
+//             ctx_arr[count] = (uint64_t)tmp << 32;
+//             uint32_t end = 0;
+//             get_html_context_end(&end, tmp, template_content, template_content_length);
+//             ctx_arr[count] |= end;
 
-            char *name = &template_content[cursor];
-            uint32_t name_length = 0;
+//             char *name = &template_content[cursor];
+//             uint32_t name_length = 0;
 
-            c = template_content[cursor];
-            for (;;) {
-                if (c == '>' || (c == '/' && template_content[cursor + 1] == '>') || isspace(c)) {
-                    break;
-                }
+//             c = template_content[cursor];
+//             for (;;) {
+//                 if (c == '>' || (c == '/' && template_content[cursor + 1] == '>') || isspace(c)) {
+//                     break;
+//                 }
 
-                if (cursor == template_content_length) {
-                    assert(0);
-                    return -1;
-                }
+//                 if (cursor == template_content_length) {
+//                     assert(0);
+//                     return -1;
+//                 }
 
-                name_length++;
-                cursor++;
-                c = template_content[cursor];
-            }
+//                 name_length++;
+//                 cursor++;
+//                 c = template_content[cursor];
+//             }
 
-            memcpy(ctx_names[count], name, name_length);
-            count++;
-        }
+//             memcpy(ctx_names[count], name, name_length);
+//             count++;
+//         }
 
-        if (cursor == template_content_length) {
-            break;
-        }
+//         if (cursor == template_content_length) {
+//             break;
+//         }
         
-        cursor++;
-        x = *(uint32_t *)(template_content + cursor);
-    }
+//         cursor++;
+//         x = *(uint32_t *)(template_content + cursor);
+//     }
 
-    if (count != ctx_arr_length) {
-        assert(0);
-    }
+//     if (count != ctx_arr_length) {
+//         assert(0);
+//     }
 
-    return 0;
-}
+//     return 0;
+// }
 
-int is_ctx_range(char *err, uint32_t *start, uint32_t *end, char *ctxname, uint32_t cursor, char *component, uint32_t component_length) {
-    uint32_t x = *(uint32_t *)(component + cursor);
-
+int is_ctx(char *err, uint32_t *start, uint32_t *end, uint32_t *start1, uint32_t *end1, char *ctxname, uint32_t cursor, char *component, uint32_t component_length) {
+    uint32_t local_cursor = cursor;
+    
+    uint32_t x = *(uint32_t *)(component + local_cursor);
     if ((__builtin_bswap32(x) & MASK32_4) == CTXLABEL) {
-        cursor += strlen_u32(CTXLABEL); /* skip "ctx:" */
+        local_cursor += strlen_u32(CTXLABEL); /* skip "ctx:" */
 
         char c;
 
-        char *name = component + cursor;
+        char *name = component + local_cursor;
         uint32_t name_length = 0;
 
-        c = component[cursor];
+        c = component[local_cursor];
         for (;;) {
-            if (c == '>' || (c == '/' && component[cursor + 1] == '>') || isspace(c)) {
+            if (c == '>' || (c == '/' && component[local_cursor + 1] == '>') || isspace(c)) {
                 break;
             }
 
-            if (cursor == component_length) {
+            if (local_cursor == component_length) {
                 assert(0);
                 return -1;
             }
 
             name_length++;
-            cursor++;
-            c = component[cursor];
+            local_cursor++;
+            c = component[local_cursor];
+        }
+
+        c = component[local_cursor];
+        for (;;) {
+            if (c == '>' || (c == '/' && component[local_cursor + 1] == '>')) {
+                break;
+            }
+            
+            if (local_cursor == component_length) {
+                assert(0);
+                return -1;
+            }
+
+            local_cursor++;
+            c = component[local_cursor];
         }
 
         if (ctxname == NULL) goto find_range;            
@@ -1487,41 +1508,45 @@ int is_ctx_range(char *err, uint32_t *start, uint32_t *end, char *ctxname, uint3
         }
         
         find_range:;
-        c = component[cursor];
+        local_cursor++;
+        *start1 = local_cursor;
+
+        c = component[local_cursor];
         for (;;) {
             if (c == '<') {
                 break;
             }
 
-            if (cursor == 0) {
+            if (local_cursor == 0) {
                 assert(0);
                 return -1;
             }
 
-            cursor--;
-            c = component[cursor];
+            local_cursor--;
+            c = component[local_cursor];
         }
 
-        *start = cursor;
-        get_html_context_end(end, cursor, component, component_length);
+        *start = local_cursor;
+        get_html_context_end(end, end1, local_cursor, component, component_length);
     }
 
     return 0;
 }
 
-int get_ctx_range(char *err, uint32_t *start, uint32_t *end, char *ctxname, uint32_t start_pos, char *component, uint32_t component_length) {
-    // uint64_t *ctx_arr -> high 32bits for start, low 32bits for end
-
+int get_ctx(char *err, uint32_t *start, uint32_t *end, uint32_t *start1, uint32_t *end1, char *ctxname, uint32_t start_pos, char *component, uint32_t component_length) {
     uint32_t cursor = (start_pos ? start_pos : 0);
 
-    uint32_t x = *(uint32_t *)(component + cursor);
     for (;;) {
         uint32_t _start = 0;
         uint32_t _end = 0;
-        is_ctx_range(err, &_start, &_end, ctxname, cursor, component, component_length);
+        uint32_t _start1 = 0;
+        uint32_t _end1 = 0;
+        is_ctx(err, &_start, &_end, &_start1, &_end1, ctxname, cursor, component, component_length);
         if (_start && _end) {
             *start = _start;
             *end = _end;
+            *start1 = _start1;
+            *end1 = _end1;
             return 0;
         }
 
@@ -1543,12 +1568,16 @@ int calc_rendered_length(char *err, uint32_t *new_length, char *ctxname, char **
 
     uint32_t start;
     uint32_t end;
+    uint32_t start1;
+    uint32_t end1;
     if (ctxname == NULL) {
         CHECK_ERR(times == 1, "When ctxname == NULL, times must be 1");
         start = 0;
         end = component_length;
+        start1 = 0;
+        end1 = component_length;
     } else {
-        PROPAGATE_ERR(get_ctx_range(err, &start, &end, ctxname, 0, component, component_length), "");
+        PROPAGATE_ERR(get_ctx(err, &start, &end, &start1, &end1, ctxname, 0, component, component_length), "");
     }
 
     uint32_t block_length = end - start;
@@ -1563,7 +1592,13 @@ int calc_rendered_length(char *err, uint32_t *new_length, char *ctxname, char **
         }
     }
 
-    *new_length = (component_length - block_length) + rendered_block_length;
+    uint32_t nlg = (component_length - block_length) + rendered_block_length;
+
+    if (nlg > component_length) {
+        *new_length = (component_length - block_length) + rendered_block_length;
+    } else {
+        *new_length = component_length;
+    }
 
     return 0;
 }
@@ -1572,32 +1607,72 @@ int render_ctx_values(char *err, char *ctxname, char **placeholders, uint32_t pl
     CHECK_ERR(times >= 1, "times must be >=1 and currently is %d", times);
     
     uint32_t cursor_start = 0;
+    uint32_t passes = 0;
+    
+    uint32_t length = component_length;
 
-    uint32_t start;
-    uint32_t end;
+    if (times > 1) {
+        uint32_t start;
+        uint32_t start1;
+        uint32_t end;
+        uint32_t end1;
+        PROPAGATE_ERR(get_ctx(err, &start, &end, &start1, &end1, ctxname, cursor_start, component, component_length), "");
+        
+        uint32_t i;
+        for (i = 0; i < times - 1; i++) {
+            char *block = component + start;
+            uint32_t block_length = end - start;
+            
+            char *insert_location = component + end;
+            
+            char *dest = insert_location + block_length;
+            char *src = insert_location;
+            uint32_t chunk_length = strlen(src) + 1;
+            memmove(dest, src, (size_t)chunk_length);
+
+            memcpy(insert_location, block, (size_t)block_length);
+            start = start + block_length;
+            end = end + block_length;
+        }
+
+        length = strlen(component) + 1;
+    }
+
+    uint32_t cursor = 0;
+    repeat:;
+
+    uint32_t start = 0;
+    uint32_t start1 = 0;
+    uint32_t end = 0;
+    uint32_t end1 = 0;
     if (ctxname == NULL) {
         CHECK_ERR(times == 1, "When ctxname == NULL, times must be 1");
         start = 0;
-        end = component_length;
+        end = length;
+        start1 = 0;
+        end1 = length;
     } else {
-        PROPAGATE_ERR(get_ctx_range(err, &start, &end, ctxname, cursor_start, component, component_length), "");
+        PROPAGATE_ERR(get_ctx(err, &start, &end, &start1, &end1, ctxname, cursor_start, component, length), "");
     }
 
-    uint32_t new_length = component_length;
+    uint32_t new_length = strlen(component);
 
-    uint32_t next_range_start;
-    uint32_t next_range_end;
-    get_ctx_range(err, &next_range_start, &next_range_end, NULL, start, component, end);
+    uint32_t next_range_start = 0;
+    uint32_t next_range_end = 0;
+    uint32_t next_range_start1 = 0;
+    uint32_t next_range_end1 = 0;
+    get_ctx(err, &next_range_start, &next_range_end, &next_range_start1, &next_range_end1, NULL, start1, component, end1);
 
-    uint32_t cursor = 0;
+    uint32_t rendered_placeholders = 0;
+
     char c = component[cursor];
     for (;;) {
-        if ((cursor > start) && (cursor < end)) {
+        if ((cursor >= start) && (cursor <= end)) {
             if (next_range_start && cursor > next_range_end) {
-                get_ctx_range(err, &next_range_start, &next_range_end, NULL, start, component, end);
+                get_ctx(err, &next_range_start, &next_range_end, &next_range_start1, &next_range_end1, NULL, start, component, end);
             }
             
-            if ((cursor > next_range_start) && (cursor < next_range_end)) {
+            if (next_range_start && ((cursor > next_range_start) && (cursor < next_range_end))) {
                 // printf("x");
             } else {
                 // try to replace if you find some to replace
@@ -1605,21 +1680,30 @@ int render_ctx_values(char *err, char *ctxname, char **placeholders, uint32_t pl
                     uint32_t i;
                     for (i = 0; i < placeholders_count; i++) {
                         if (strncmp(component + cursor, placeholders[i], strlen(placeholders[i])) == 0) {
-                            char *curr = placeholders[i] + 1;
+                            char *curr = placeholders[i];
                             uint32_t curr_length = strlen(placeholders[i]);
                             
-                            char *new = values[0][i];
-                            uint32_t new_length = strlen(values[0][i]);
+                            char *new_val = values[passes][i];
+                            uint32_t new_val_length = strlen(values[passes][i]);
                         
-                            char *insert_location = component + cursor -1;
+                            char *insert_location = component + cursor;
 
                             // replace
-                            char *dest = insert_location + new_length;
+                            char *dest = insert_location + new_val_length;
                             char *src = insert_location + curr_length;
                             size_t chunk_length = strlen(component + cursor + curr_length) + 1;
                             memmove(dest, src, chunk_length);
 
-                            memcpy(insert_location, new, new_length);
+                            memcpy(insert_location, new_val, new_val_length);
+                            rendered_placeholders++;
+                            
+                            if (rendered_placeholders == placeholders_count) {                                
+                                cursor_start = end - 1;
+                                cursor = cursor_start;
+
+                                passes++;
+                                goto repeat;
+                            }
                         }
                     }
                 }
@@ -1633,9 +1717,6 @@ int render_ctx_values(char *err, char *ctxname, char **placeholders, uint32_t pl
         cursor++;
         c = component[cursor];
     }
-
-    printf("%s\n", component);
-    printf("hello world!\n");
 
     return 0;
 }

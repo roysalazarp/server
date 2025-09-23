@@ -2,7 +2,9 @@
     <hhr class="foo">
         <div>
             <h1>
-                @@age @@name
+                <div ctx:repeat>
+                    @@name @@lastname
+                </div>
             </h1>
             <div>
                 <table ctx:tables>

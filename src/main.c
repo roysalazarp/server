@@ -58,16 +58,16 @@ typedef struct {
     uint32_t end;
 } Range;
 
-typedef struct {
-    uint32_t *ctx_name_lengths_arr;
-    char **ctx_name_arr;
-    uint64_t *ctx_arr;
-    uint32_t length;
-} TemplateRenderingCtxArr;
+// typedef struct {
+//     uint32_t *ctx_name_lengths_arr;
+//     char **ctx_name_arr;
+//     uint64_t *ctx_arr;
+//     uint32_t length;
+// } TemplateRenderingCtxArr;
 
 char **component_name_arr;
 char **component_content_arr;
-TemplateRenderingCtxArr *component_rendering_ctx_arr;
+// TemplateRenderingCtxArr *component_rendering_ctx_arr;
 
 uint32_t component_arr_length;
 sqlite3 *db;
@@ -201,10 +201,6 @@ void test(void *v) {
     char *component = component_content_arr[index];
     uint32_t component_length = strlen(component);
     assert(component_length);
-
-    char *rendering = malloc(sizeof(char) * component_length + 1);
-    // check for malloc error
-    memcpy(rendering, component, component_length + 1);
     
     // uint32_t times = 2;
     // char *placeholders[1] = { "col_name" };
@@ -219,8 +215,30 @@ void test(void *v) {
     // uint32_t new_length = 0;
     // calc_rendered_length(err, &new_length, "col_names", placeholders, 1, values, times, component, component_length);
     
-    uint32_t times = 1;
-    char *placeholders[2] = { "@@age", "@@name" };
+    // uint32_t times = 1;
+    // char *placeholders[2] = { "@@age", "@@name" };
+    // char ***values = NULL;
+    // try_memory_alloc(err, (void **)&values, rctx->memory, times * sizeof(char **));
+    // for (int i = 0; i < times; i++) {
+    //     try_memory_alloc(err, (void **)&values[i], rctx->memory, 2 * sizeof(char *));
+    // }
+    // values[0][0] = strdup("Roy");
+    // values[0][1] = strdup("Salazar");
+    
+    // uint32_t new_length = 0;
+    // calc_rendered_length(err, &new_length, NULL, placeholders, 2, values, times, component, component_length);
+    
+    // if (component_length != new_length) {
+    //     rendering = realloc(rendering, new_length * sizeof(char) + 1);
+    // }
+
+    // render_ctx_values(err, NULL, placeholders, 2, values, times, rendering, new_length);
+
+    char *rendering = malloc((sizeof(char) * component_length) + 1);
+    memcpy(rendering, component, component_length + 1);
+    
+    uint32_t times = 2;
+    char *placeholders[2] = { "@@name", "@@lastname" };
     char ***values = NULL;
     try_memory_alloc(err, (void **)&values, rctx->memory, times * sizeof(char **));
     for (int i = 0; i < times; i++) {
@@ -228,21 +246,26 @@ void test(void *v) {
     }
     values[0][0] = strdup("Roy");
     values[0][1] = strdup("Salazar");
+    values[1][0] = strdup("John");
+    values[1][1] = strdup("Doe");
     
-    // uint32_t new_length = 0;
-    // calc_rendered_length(err, &new_length, NULL, placeholders, 2, values, times, component, component_length);
+    uint32_t new_length = 0;
+    calc_rendered_length(err, &new_length, "repeat", placeholders, 2, values, times, component, component_length);
     
-    // rendering = realloc(rendering, new_length * sizeof(char) + 1);
-    // render_ctx_values(err, NULL, placeholders, 2, values, times, rendering, new_length);
+    if (component_length != new_length) {
+        rendering = realloc(rendering, (new_length * sizeof(char)) + 1);
+    }
 
-    char response[KB(8)];
-    bzero(response, KB(8));
+    render_ctx_values(err, "repeat", placeholders, 2, values, times, rendering, new_length);
+
+    char response[KB(12)];
+    bzero(response, KB(12));
     sprintf(response,
         "HTTP/1.1 200 OK\r\n"
         "Content-Length: %d\r\n"
         "Content-Type: text/html\r\n\r\n"
         "%s",
-        component_length, component);
+        new_length, rendering);
     
     int response_length = strlen(response);
     ark_fd_write(rctx->ssl, rctx->fd, response, response_length);
@@ -333,8 +356,8 @@ void handler(void *arg) {
         
         if (GET("/")) {
             ark_task_create(home, &rctx, KB(15));
-        } else if (GET("/test")) {
-            ark_task_create(test, &rctx, KB(15));
+        // } else if (GET("/test")) {
+        //     ark_task_create(test, &rctx, KB(20));
         } else if (GET("/login")) {
             ark_task_create(login, &rctx, KB(15));
         } else if (POST("/logout")) {
@@ -465,39 +488,39 @@ int main() {
     
     ark_compile_templates(component_content_arr, component_name_arr, template_content_array, component_arr_length);
 
-    uint32_t *template_rendering_ctx_count = NULL;
-    memory_alloc((void **)&template_rendering_ctx_count, &memory, component_arr_length * sizeof(uint32_t));
+    // uint32_t *template_rendering_ctx_count = NULL;
+    // memory_alloc((void **)&template_rendering_ctx_count, &memory, component_arr_length * sizeof(uint32_t));
 
-    ark_count_template_rendering_ctx_amount(template_rendering_ctx_count, component_content_arr, component_arr_length);
+    // ark_count_template_rendering_ctx_amount(template_rendering_ctx_count, component_content_arr, component_arr_length);
 
-    memory_alloc((void **)&component_rendering_ctx_arr, &memory, component_arr_length * sizeof(TemplateRenderingCtxArr));
-    for (i = 0; i < component_arr_length; i++) {
-        component_rendering_ctx_arr[i].length = template_rendering_ctx_count[i];
-        memory_alloc((void **)&(component_rendering_ctx_arr[i].ctx_arr), &memory, template_rendering_ctx_count[i] * sizeof(uint64_t));
-        memory_alloc((void **)&(component_rendering_ctx_arr[i].ctx_name_lengths_arr), &memory, template_rendering_ctx_count[i] * sizeof(uint32_t));
-        memory_alloc((void **)&(component_rendering_ctx_arr[i].ctx_name_arr), &memory, template_rendering_ctx_count[i] * sizeof(char *));
-    }
+    // memory_alloc((void **)&component_rendering_ctx_arr, &memory, component_arr_length * sizeof(TemplateRenderingCtxArr));
+    // for (i = 0; i < component_arr_length; i++) {
+    //     component_rendering_ctx_arr[i].length = template_rendering_ctx_count[i];
+    //     memory_alloc((void **)&(component_rendering_ctx_arr[i].ctx_arr), &memory, template_rendering_ctx_count[i] * sizeof(uint64_t));
+    //     memory_alloc((void **)&(component_rendering_ctx_arr[i].ctx_name_lengths_arr), &memory, template_rendering_ctx_count[i] * sizeof(uint32_t));
+    //     memory_alloc((void **)&(component_rendering_ctx_arr[i].ctx_name_arr), &memory, template_rendering_ctx_count[i] * sizeof(char *));
+    // }
 
-    for (i = 0; i < component_arr_length; i++) {
-        char *component = component_content_arr[i];
-        uint32_t component_length = strlen(component);
+    // for (i = 0; i < component_arr_length; i++) {
+    //     char *component = component_content_arr[i];
+    //     uint32_t component_length = strlen(component);
         
-        ark_get_single_template_rendering_ctx_lengths_info(component_rendering_ctx_arr[i].ctx_name_lengths_arr, component_rendering_ctx_arr[i].length, component, component_length);
-    }
+    //     ark_get_single_template_rendering_ctx_lengths_info(component_rendering_ctx_arr[i].ctx_name_lengths_arr, component_rendering_ctx_arr[i].length, component, component_length);
+    // }
 
-    for (i = 0; i < component_arr_length; i++) {
-        uint32_t j;
-        for (j = 0; j < component_rendering_ctx_arr[i].length; j++) {
-            memory_alloc((void **)&(component_rendering_ctx_arr[i].ctx_name_arr[j]), &memory, component_rendering_ctx_arr[i].ctx_name_lengths_arr[j] + 1);
-        }
-    }
+    // for (i = 0; i < component_arr_length; i++) {
+    //     uint32_t j;
+    //     for (j = 0; j < component_rendering_ctx_arr[i].length; j++) {
+    //         memory_alloc((void **)&(component_rendering_ctx_arr[i].ctx_name_arr[j]), &memory, component_rendering_ctx_arr[i].ctx_name_lengths_arr[j] + 1);
+    //     }
+    // }
     
-    for (i = 0; i < component_arr_length; i++) {
-        char *component = component_content_arr[i];
-        uint32_t component_length = strlen(component);
+    // for (i = 0; i < component_arr_length; i++) {
+    //     char *component = component_content_arr[i];
+    //     uint32_t component_length = strlen(component);
         
-        ark_get_single_template_rendering_ctx(component_rendering_ctx_arr[i].ctx_name_arr, component_rendering_ctx_arr[i].ctx_arr, component_rendering_ctx_arr[i].length, component, component_length);
-    }
+    //     ark_get_single_template_rendering_ctx(component_rendering_ctx_arr[i].ctx_name_arr, component_rendering_ctx_arr[i].ctx_arr, component_rendering_ctx_arr[i].length, component, component_length);
+    // }
 
     char db_relpath[] = "./dev.db";
     char db_path[1024];
@@ -550,7 +573,7 @@ int main() {
 
     SSL_CTX_set_options(ctx, SSL_OP_IGNORE_UNEXPECTED_EOF);
 
-    ark_task_create(handler, &fd, KB(8)); /** NOTE: Keep an eye that the stack size does not become a problem */
+    ark_task_create(handler, &fd, KB(12)); /** NOTE: Keep an eye that the stack size does not become a problem */
 	ark_task_run_scheduler();
     
     /** NOTE: Code bellow will never run */
