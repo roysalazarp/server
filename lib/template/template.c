@@ -13,8 +13,6 @@
 #include "../../include/ark/utils.h"
 #include "../../include/ark/template.h"
 
-#define HTML_EXTENSION  0x2E68746D6C000000 /* ".html" */
-
 #define HTML_ATTR_START         0
 #define HTML_ATTR_START_KEY     1
 #define HTML_ATTR_KEY           2
@@ -774,15 +772,21 @@ int ark_templates_count(uint32_t *count, uint32_t *html_file_mask, char **array_
     return 0;
 }
 
-FAIL_SAFE void ark_make_html_file_mask(uint32_t *html_file_mask, char **array_of_filepaths, uint32_t array_length) {
+FAIL_SAFE void ark_make_file_mask(uint32_t *file_mask, uint8_t opposite, uint64_t extension, char **array_of_filepaths, uint32_t array_length) {
     uint32_t i;
     for (i = 0; i < array_length; i++) {
         char *file_path = array_of_filepaths[i];
         
-        uint64_t ext = *(uint64_t *)(file_path + strlen(file_path) - 5 /* .html */);
+        uint64_t mask = 0;
+        uint8_t length = 0;
+        _strlen_u64(&length, &mask, extension);
         
-        if ((__builtin_bswap64(ext) & MASK64_5) == HTML_EXTENSION) {
-            TURN_ON_U32_BIT(html_file_mask, i);
+        uint64_t ext = *(uint64_t *)(file_path + strlen(file_path) - length);
+        
+        int condition = ((__builtin_bswap64(ext) & mask) == extension);
+
+        if (opposite ? !condition : condition) {
+            TURN_ON_U32_BIT(file_mask, i);
         }
     }
 }

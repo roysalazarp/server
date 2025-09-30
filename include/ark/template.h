@@ -5,7 +5,7 @@
 #include "shared.h"
 #include "utils.h"
 
-FAIL_SAFE void ark_make_html_file_mask(uint32_t *html_file_mask, char **array_of_filepaths, uint32_t array_length);
+FAIL_SAFE void ark_make_file_mask(uint32_t *file_mask, uint8_t opposite, uint64_t extension, char **array_of_filepaths, uint32_t array_length);
 int ark_templates_count(uint32_t *count, uint32_t *html_file_mask, char **array_of_filepaths, char **file_content_array, uint32_t array_length);
 int ark_validate_templates(uint32_t *html_file_mask, char **array_of_filepaths, char **file_content_array, uint32_t array_length);
 int ark_get_compile_templates_lengths(uint32_t *compiled_templates_lengths, char **template_name_array, char **template_content_array, uint32_t template_count);

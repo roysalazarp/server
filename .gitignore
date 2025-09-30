@@ -3,3 +3,4 @@ test/*
 *.pem
 build-*
 debug
+secrets.*

@@ -62,5 +62,7 @@ PANIC void ark_list_files(char **array_of_filepaths, uint32_t num_of_filepaths, 
 PANIC void ark_get_file_size(uint64_t *file_size, char *filepath);
 int string_to_int(int *result, char *str, uint32_t length);
 PANIC void ark_list_file_sizes(size_t *array_of_lengths, uint32_t num_of_filepaths, char *base_path);
+FAIL_SAFE void _strlen_u64(uint8_t *length, uint64_t *mask, uint64_t x);
+FAIL_SAFE void mask_count_on(uint32_t *total, const uint32_t *mask, uint32_t mask_size);
 
 #endif /* ARK_UTILS_H */

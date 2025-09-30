@@ -1,20 +1,49 @@
-<x-def name:home>
+<x-def name:app>
     <!DOCTYPE html>
     <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        
-        <script src="https://unpkg.com/htmx.org@1.9.10" integrity="sha384-D1Kt99CQMDuVetoL1lrYwg5t+9QdHe7NLX/SoJYkXDFfX37iInKRy5xLSi8nO7UC" crossorigin="anonymous" defer></script>
-        <script src="https://unpkg.com/htmx-ext-response-targets@2.0.0/response-targets.js" defer></script>
-        
-        <title>Home</title>
-    </head>
-    <body>
-        <h1>Home page!</h1>
-        <button hx-post="/logout" hx-swap="none">
-            logout
-        </button>
-    </body>
+        <head>
+            <meta charset="UTF-8" />
+            <meta name="viewport" content="viewport-fit=cover,width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no" />
+
+            <link rel="preconnect" href="https://fonts.googleapis.com" />
+            <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+            <link href="https://fonts.googleapis.com/css2?family=Agbalumo&family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap" rel="stylesheet" />
+
+            <link rel="preconnect" href="https://fonts.googleapis.com" />
+            <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+            <link href="https://fonts.googleapis.com/css2?family=Agbalumo&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap" rel="stylesheet" />
+
+            <link rel="stylesheet" href="public/index.css" />
+
+            <script src="https://unpkg.com/htmx.org@1.9.10" integrity="sha384-D1Kt99CQMDuVetoL1lrYwg5t+9QdHe7NLX/SoJYkXDFfX37iInKRy5xLSi8nO7UC" crossorigin="anonymous" defer></script>
+            <script src="https://unpkg.com/htmx-ext-response-targets@2.0.0/response-targets.js" defer></script>
+
+            <script src="public/index.js" defer></script>
+            <link rel="manifest" href="public/manifest.json" />
+            <title>Tila Storage</title>
+        </head>
+        <body class="app-bg">
+            <div class="background"></div>
+            <div class="menu-overlay" id="menuOverlay"></div>
+
+            <div class="menu-panel" id="menuPanel">
+                <button class="menu-item" data-base="base-home">Home</button>
+                <button class="menu-item" data-base="base-search">Search</button>
+                <button class="menu-item" data-base="base-settings">Settings</button>
+                <button class="menu-item" id="open-view1" data-view="view1">Signin</button>
+            </div>
+
+            <div class="content-wrapper" id="contentWrapper">
+                <x-slot />
+            </div>
+        </body>
     </html>
+</x-def>
+
+<x-def name:home>
+    <x-use name:app>
+        <x-fill>
+            <h1>home page!</h1>
+        </x-fill>
+    </x-use>
 </x-def>

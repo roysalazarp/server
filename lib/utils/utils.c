@@ -209,3 +209,38 @@ int string_to_int(int *result, char *str, uint32_t length) {
 
     return 0;
 }
+
+FAIL_SAFE void _strlen_u64(uint8_t *length, uint64_t *mask, uint64_t x) {
+    uint8_t count = 0;
+
+    // scan from MSB (byte 7) down to LSB (byte 0)
+    for (int i = 7; i >= 0; i--) {
+        uint8_t b = (x >> (i * 8)) & 0xFF;
+        if (b != 0) {
+            count++;
+        } else {
+            break; // stop at first zero (string terminator)
+        }
+    }
+
+    *length = count;
+    *mask   = (count > 0) ? (~0ULL << ((8 - count) * 8)) : 0ULL;
+}
+
+uint32_t popcount32(uint32_t x) {
+    uint32_t count = 0;
+    while (x) {
+        x &= (x - 1);  // clear lowest set bit
+        count++;
+    }
+    return count;
+}
+
+FAIL_SAFE void mask_count_on(uint32_t *total, const uint32_t *mask, uint32_t mask_size) {
+    uint32_t count = 0;
+    for (uint32_t i = 0; i < mask_size; i++) {
+        count += popcount32(mask[i]);
+    }
+
+    *total = count;
+}

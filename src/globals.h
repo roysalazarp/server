@@ -13,6 +13,11 @@
 extern char **component_name_arr;
 extern char **component_content_arr;
 extern uint32_t component_arr_length;
+
+extern char **public_name_arr;
+extern char **public_content_arr;
+extern uint32_t public_arr_length;
+
 extern sqlite3 *db;
 
 extern char *error_messages[];

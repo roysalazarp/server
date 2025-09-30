@@ -30,6 +30,11 @@
 
 #define PORT 443
 
+#define HTML_EXTENSION  0x2E68746D6C000000 /* ".html" */
+
+#define CURR_DIR  0x2E2F0000 /* "./" */
+#define PREV_DIR  0x2E2E2F00 /* "../" */
+
 #define ARK_MAX_HTTP_REQUEST_SIZE MB(300)
 #define ARK_MAX_QUEUED_HTTP_REQUESTS 500
 
@@ -47,6 +52,10 @@
 #define POST(s) \
   CheckUrlAndMethod(s, kHttpPost)
 
+#define UrlStartsWith(S)                   \
+  (rctx.msg.uri.b - rctx.msg.uri.a >= strlen(S) && \
+   !memcmp(rctx.raw_request + rctx.msg.uri.a, S, strlen(S)))
+
 typedef struct {
     char server[20];
     char uri[20];
@@ -58,18 +67,14 @@ typedef struct {
     uint32_t end;
 } Range;
 
-// typedef struct {
-//     uint32_t *ctx_name_lengths_arr;
-//     char **ctx_name_arr;
-//     uint64_t *ctx_arr;
-//     uint32_t length;
-// } TemplateRenderingCtxArr;
-
 char **component_name_arr;
 char **component_content_arr;
-// TemplateRenderingCtxArr *component_rendering_ctx_arr;
-
 uint32_t component_arr_length;
+
+char **public_name_arr;
+char **public_content_arr;
+uint32_t public_arr_length;
+
 sqlite3 *db;
 
 SSL_CTX *ctx;
@@ -200,7 +205,6 @@ void test(void *v) {
     find_element_index(&index, component_name_arr, "foo", component_arr_length);
     char *component = component_content_arr[index];
     uint32_t component_length = strlen(component);
-    assert(component_length);
     
     // uint32_t times = 2;
     // char *placeholders[1] = { "col_name" };
@@ -266,6 +270,87 @@ void test(void *v) {
         "Content-Type: text/html\r\n\r\n"
         "%s",
         new_length, rendering);
+    
+    int response_length = strlen(response);
+    ark_fd_write(rctx->ssl, rctx->fd, response, response_length);
+    
+    SSL_shutdown(rctx->ssl);
+    SSL_free(rctx->ssl);
+    close(rctx->fd);
+    memory_free(rctx->memory);
+}
+
+int file_content_type(char *err, char **type, char *path, uint32_t path_length) {
+    CHECK_ERR(path, "needs to pass a path");
+
+    uint32_t cursor = 0;
+    uint32_t x = *(uint32_t *)(path);
+
+    if ((__builtin_bswap32(x) & MASK32_2) == CURR_DIR) {
+        cursor += 2;
+    }
+    
+    if ((__builtin_bswap32(x) & MASK32_3) == PREV_DIR) {
+        cursor += 3;
+    }
+
+    char c = path[cursor];
+    for (;;) {
+        if (c == '.') {
+            break;
+        }
+        
+        CHECK_ERR(cursor < path_length, "wrong asset name");
+        
+        cursor++;
+        c = path[cursor];
+    }
+    
+    const char *ext = path + cursor;
+
+    if (strncmp(ext, ".css", strlen(".css")) == 0 && (path_length - cursor) == strlen(".css")) {
+        *type = "text/css";
+        return 0;
+    }
+
+    if (strncmp(ext, ".js", strlen(".js")) == 0 && (path_length - cursor) == strlen(".js")) {
+        *type = "text/javascript";
+        return 0;
+    }
+
+    if (strncmp(ext, ".json", strlen(".json")) == 0 && (path_length - cursor) == strlen(".json")) {
+        *type = "application/json";
+        return 0;
+    }
+    
+    CHECK_ERR(cursor == path_length, "wrong asset name");
+
+    return 0;
+}
+
+void public(void *v) {
+    char err[ERR_SIZE] = {0};
+    RequestCtx *rctx = (RequestCtx *)v;
+
+    char asset_name[KB(1)] = {0};
+    snprintf(asset_name, sizeof(asset_name), "%s%.*s", MYDIR, rctx->msg.uri.b - rctx->msg.uri.a, rctx->raw_request + rctx->msg.uri.a);
+
+    uint32_t index = 0;
+    find_element_index(&index, public_name_arr, asset_name, public_arr_length);
+    char *asset = public_content_arr[index];
+    uint32_t asset_length = strlen(asset);
+
+    char *asset_type = NULL;
+    file_content_type(err, &asset_type, asset_name, strlen(asset_name));
+    
+    char response[KB(12)];
+    bzero(response, KB(12));
+    sprintf(response,
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Length: %d\r\n"
+        "Content-Type: %s\r\n\r\n"
+        "%s",
+        asset_length, asset_type, asset);
     
     int response_length = strlen(response);
     ark_fd_write(rctx->ssl, rctx->fd, response, response_length);
@@ -353,21 +438,23 @@ void handler(void *arg) {
             }
             break;
         }
-        
-        if (GET("/")) {
+
+        if (UrlStartsWith("/public")) {
+            ark_task_create(public, &rctx, KB(20));
+        } else if (GET("/")) {
             ark_task_create(home, &rctx, KB(15));
         // } else if (GET("/test")) {
         //     ark_task_create(test, &rctx, KB(20));
-        } else if (GET("/login")) {
-            ark_task_create(login, &rctx, KB(15));
-        } else if (POST("/logout")) {
-            ark_task_create(logout, &rctx, KB(10));
-        } else if (GET("/signup")) {
-            ark_task_create(signup, &rctx, KB(15));
-        } else if (POST("/login/create-session")) {
-            ark_task_create(login_create_session, &rctx, KB(15));
-        } else if (POST("/signup/create-account")) {
-            ark_task_create(signup_create_account, &rctx, KB(15));
+        // } else if (GET("/login")) {
+        //     ark_task_create(login, &rctx, KB(15));
+        // } else if (POST("/logout")) {
+        //     ark_task_create(logout, &rctx, KB(10));
+        // } else if (GET("/signup")) {
+        //     ark_task_create(signup, &rctx, KB(15));
+        // } else if (POST("/login/create-session")) {
+        //     ark_task_create(login_create_session, &rctx, KB(15));
+        // } else if (POST("/signup/create-account")) {
+        //     ark_task_create(signup_create_account, &rctx, KB(15));
         } else {
             ark_task_create(not_found, &rctx, KB(10));
         }
@@ -451,8 +538,39 @@ int main() {
     uint32_t mask_size = (num_of_filepaths / U32_BITS) ? (num_of_filepaths / U32_BITS) : 1; /* ensure a minimum */
     uint32_t *html_file_mask = NULL;
     memory_alloc((void **)&html_file_mask, &memory, mask_size * sizeof(uint32_t));
+    
+    ark_make_file_mask(html_file_mask, false, HTML_EXTENSION, array_of_filepaths, num_of_filepaths);
+    
+    uint32_t *public_file_mask = NULL;
+    memory_alloc((void **)&public_file_mask, &memory, mask_size * sizeof(uint32_t));
+    
+    ark_make_file_mask(public_file_mask, true, HTML_EXTENSION, array_of_filepaths, num_of_filepaths);
 
-    ark_make_html_file_mask(html_file_mask, array_of_filepaths, num_of_filepaths);
+    uint32_t count_public_files = 0;
+    mask_count_on(&count_public_files, public_file_mask, mask_size);
+
+    public_arr_length = count_public_files;
+
+    memory_alloc((void **)&public_name_arr, &memory, public_arr_length * sizeof(char *));
+    memory_alloc((void **)&public_content_arr, &memory, public_arr_length * sizeof(char *));
+
+    uint32_t j = 0;
+    for (i = 0; i < num_of_filepaths; i++) {
+        if (IS_U32_BIT_OFF(public_file_mask, i)) {
+            continue;
+        }
+
+        char *file_path = array_of_filepaths[i];
+        char *file_content = array_of_file_contents[i];
+
+        memory_alloc((void **)&public_name_arr[j], &memory, strlen(file_path) + 1);
+        memcpy(public_name_arr[j], file_path, strlen(file_path));
+        
+        memory_alloc((void **)&public_content_arr[j], &memory, strlen(file_content) + 1);
+        memcpy(public_content_arr[j], file_content, strlen(file_content));
+
+        j++;
+    }
     
     ark_validate_templates(html_file_mask, array_of_filepaths, array_of_file_contents, num_of_filepaths);
 
@@ -487,40 +605,6 @@ int main() {
     }
     
     ark_compile_templates(component_content_arr, component_name_arr, template_content_array, component_arr_length);
-
-    // uint32_t *template_rendering_ctx_count = NULL;
-    // memory_alloc((void **)&template_rendering_ctx_count, &memory, component_arr_length * sizeof(uint32_t));
-
-    // ark_count_template_rendering_ctx_amount(template_rendering_ctx_count, component_content_arr, component_arr_length);
-
-    // memory_alloc((void **)&component_rendering_ctx_arr, &memory, component_arr_length * sizeof(TemplateRenderingCtxArr));
-    // for (i = 0; i < component_arr_length; i++) {
-    //     component_rendering_ctx_arr[i].length = template_rendering_ctx_count[i];
-    //     memory_alloc((void **)&(component_rendering_ctx_arr[i].ctx_arr), &memory, template_rendering_ctx_count[i] * sizeof(uint64_t));
-    //     memory_alloc((void **)&(component_rendering_ctx_arr[i].ctx_name_lengths_arr), &memory, template_rendering_ctx_count[i] * sizeof(uint32_t));
-    //     memory_alloc((void **)&(component_rendering_ctx_arr[i].ctx_name_arr), &memory, template_rendering_ctx_count[i] * sizeof(char *));
-    // }
-
-    // for (i = 0; i < component_arr_length; i++) {
-    //     char *component = component_content_arr[i];
-    //     uint32_t component_length = strlen(component);
-        
-    //     ark_get_single_template_rendering_ctx_lengths_info(component_rendering_ctx_arr[i].ctx_name_lengths_arr, component_rendering_ctx_arr[i].length, component, component_length);
-    // }
-
-    // for (i = 0; i < component_arr_length; i++) {
-    //     uint32_t j;
-    //     for (j = 0; j < component_rendering_ctx_arr[i].length; j++) {
-    //         memory_alloc((void **)&(component_rendering_ctx_arr[i].ctx_name_arr[j]), &memory, component_rendering_ctx_arr[i].ctx_name_lengths_arr[j] + 1);
-    //     }
-    // }
-    
-    // for (i = 0; i < component_arr_length; i++) {
-    //     char *component = component_content_arr[i];
-    //     uint32_t component_length = strlen(component);
-        
-    //     ark_get_single_template_rendering_ctx(component_rendering_ctx_arr[i].ctx_name_arr, component_rendering_ctx_arr[i].ctx_arr, component_rendering_ctx_arr[i].length, component, component_length);
-    // }
 
     char db_relpath[] = "./dev.db";
     char db_path[1024];
