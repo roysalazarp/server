@@ -208,7 +208,7 @@
                 }
 
                 .base {
-                    background: #fafafa;
+                    background-color: #fafafa;
                     position: fixed;
                     top: 0;
                     left: 0;
@@ -216,17 +216,12 @@
                     height: 100vh;
                     z-index: -1;
                     transform: translateZ(0);
-                    padding: 2rem 1rem;
+                    padding: 1rem;
                     padding-bottom: 60px;
                     box-sizing: border-box;
                     opacity: 0;
-                    transition: opacity 0.2s ease, transform 0.2s ease;
+                    transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out;
                     overflow-y: auto;
-                }
-
-                #base-home {
-                    z-index: 0;
-                    opacity: 1;
                 }
 
                 .base h1 {
@@ -455,7 +450,7 @@
                 let viewStack = [];
                 let currentZIndex = 2;
                 const viewAnimations = {};
-                let currentBase = 'base-home';
+                let currentBase = localStorage.getItem('currentBase') || 'base-home';
                 let isMenuOpen = false;
 
                 function openMenu() {
@@ -491,8 +486,15 @@
                 function loadState() {
                     const savedViewStack = localStorage.getItem('viewStack');
                     const savedAnimations = localStorage.getItem('viewAnimations');
-                    const savedBase = localStorage.getItem('currentBase');
+                    const savedBase = localStorage.getItem('currentBase') || 'base-home';
                     const savedMenuState = localStorage.getItem('isMenuOpen');
+
+                    const baseToShow = document.getElementById(savedBase);
+                    if (baseToShow) {
+                        baseToShow.style.opacity = "1";
+                        baseToShow.style.zIndex = 0;
+                        currentBase = savedBase;
+                    }
 
                     if (savedViewStack) {
                         const views = JSON.parse(savedViewStack);
@@ -542,16 +544,6 @@
                         }, 50);
                     }
 
-                    if (savedBase && savedBase !== currentBase) {
-                        const currentBaseDiv = document.getElementById(currentBase);
-                        const newBaseDiv = document.getElementById(savedBase);
-
-                        currentBaseDiv.style.opacity = "0";
-                        currentBaseDiv.style.zIndex = -1;
-                        newBaseDiv.style.opacity = "1";
-                        newBaseDiv.style.zIndex = 0;
-                        currentBase = savedBase;
-                    }
 
                     if (savedMenuState === 'true') {
                         const menuPanel = document.getElementById('menuPanel');
