@@ -15,13 +15,13 @@ void home(void *v) {
     is_authenticated(err, &user_id, rctx);
 
     uint32_t index = 0;
-    find_element_index(&index, component_name_arr, "home", component_arr_length);
+    find_element_index(&index, component_name_arr, "main", component_arr_length);
     char *component = component_content_arr[index];
     uint32_t component_length = strlen(component);
     assert(component_length);
 
-    char response[KB(8)];
-    bzero(response, KB(8));
+    char response[KB(25)];
+    bzero(response, KB(25));
     sprintf(response,
         "HTTP/1.1 200 OK\r\n"
         "Content-Length: %d\r\n"

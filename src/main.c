@@ -442,7 +442,7 @@ void handler(void *arg) {
         if (UrlStartsWith("/public")) {
             ark_task_create(public, &rctx, KB(20));
         } else if (GET("/")) {
-            ark_task_create(home, &rctx, KB(15));
+            ark_task_create(home, &rctx, KB(35));
         // } else if (GET("/test")) {
         //     ark_task_create(test, &rctx, KB(20));
         // } else if (GET("/login")) {
@@ -492,7 +492,7 @@ int main() {
     uint32_t num_of_filepaths = 0;
     ark_count_files(&num_of_filepaths, MYDIR); /* We'll need this later for memory allocation */
     
-    uint64_t mem_size = PAGE_SIZE * 12;
+    uint64_t mem_size = PAGE_SIZE * 20;
     void *mem = mmap(NULL, (size_t)mem_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     ARK_ASSERT(mem != MAP_FAILED, 1, "mmap failed for size %d", (int)mem_size);
     

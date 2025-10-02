@@ -1,4 +1,4 @@
-<x-def name:app>
+<x-def name:main>
     <!DOCTYPE html>
     <html lang="en">
         <head>
@@ -21,8 +21,151 @@
             <script src="public/index.js" defer></script>
             <link rel="manifest" href="public/manifest.json" />
             <title>Tila Storage</title>
+            <style>
+                * {
+                    margin: 0;
+                    padding: 0;
+                }
+
+                body {
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                }
+
+                .background {
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    width: 100vw;
+                    height: 100vh;
+                    background-color: white;
+                    z-index: -2;
+                    transform: translateZ(0);
+                }
+
+                .menu-overlay {
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    width: 100vw;
+                    height: 100vh;
+                    background-color: rgba(0, 0, 0, 0.3);
+                    z-index: 15;
+                    opacity: 0;
+                    visibility: hidden;
+                    transition: opacity 0.3s ease-in-out, visibility 0.3s ease-in-out;
+                }
+
+                .menu-overlay.visible {
+                    opacity: 1;
+                    visibility: visible;
+                }
+
+                .menu-panel {
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    width: 75vw;
+                    height: 100vh;
+                    background-color: white;
+                    z-index: 20;
+                    transform: translateX(-100%);
+                    transition: transform 0.3s ease-in-out;
+                    box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+                    padding: 2rem 1.5rem;
+                    box-sizing: border-box;
+                }
+
+                .menu-panel.open {
+                    transform: translateX(0);
+                }
+
+                .menu-item {
+                    display: block;
+                    padding: 1.5rem 0;
+                    font-size: 1.2rem;
+                    color: #333;
+                    text-decoration: none;
+                    border-bottom: 1px solid #f0f0f0;
+                    cursor: pointer;
+                    background: none;
+                    border: none;
+                    width: 100%;
+                    text-align: left;
+                    font-family: inherit;
+                }
+
+                .menu-item:last-child {
+                    border-bottom: none;
+                }
+
+                .menu-item:hover {
+                    background-color: #f8f9fa;
+                }
+
+                .content-wrapper {
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    width: 100vw;
+                    height: 100vh;
+                    transition: transform 0.3s ease-in-out;
+                    z-index: 1;
+                }
+
+                .content-wrapper.shifted {
+                    transform: translateX(75vw);
+                }
+
+                .top-header {
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    width: 100vw;
+                    height: 80px;
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    padding: 0 1rem;
+                    z-index: 10;
+                    transition: transform 0.3s ease-in-out;
+                    box-sizing: border-box;
+                }
+
+                .hamburger-button {
+                    background: none;
+                    border: none;
+                    cursor: pointer;
+                    padding: 8px;
+                    border-radius: 12px;
+                    background-color: #E8F2FF;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                }
+
+                .base {
+                    margin-top: 80px;
+                    background-color: white;
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    width: 100vw;
+                    height: 100vh;
+                    z-index: -1;
+                    transform: translateZ(0);
+                    padding-bottom: 60px;
+                    box-sizing: border-box;
+                    opacity: 0;
+                    transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out;
+                }
+
+                #base-home {
+                    z-index: 0;
+                    opacity: 1;
+                }
+            </style>
         </head>
-        <body class="app-bg">
+        <body>
             <div class="background"></div>
             <div class="menu-overlay" id="menuOverlay"></div>
 
@@ -30,20 +173,188 @@
                 <button class="menu-item" data-base="base-home">Home</button>
                 <button class="menu-item" data-base="base-search">Search</button>
                 <button class="menu-item" data-base="base-settings">Settings</button>
-                <button class="menu-item" id="open-view1" data-view="view1">Signin</button>
             </div>
 
             <div class="content-wrapper" id="contentWrapper">
-                <x-slot />
+                <div class="top-header">
+                    <button class="hamburger-button" id="hamburgerButton">
+                        <svg width="24" height="13" viewBox="0 0 24 13" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M2 2H22M2 11H22" stroke="#0062FF" stroke-width="2.5" stroke-linecap="round"
+                                stroke-linejoin="round" />
+                        </svg>
+                    </button>
+                </div>
+
+                <div id="base-home" class="base">
+                    <h1>Home View</h1>
+                    <p>This is the home base view.</p>
+                </div>
+
+                <div id="base-search" class="base">
+                    <h1>Search View</h1>
+                    <p>This is the search base view.</p>
+                </div>
+
+                <div id="base-settings" class="base">
+                    <h1>Settings View</h1>
+                    <p>This is the settings base view.</p>
+                </div>
             </div>
+            <script>
+                let viewStack = [];
+                let currentZIndex = 2;
+                const viewAnimations = {};
+                let currentBase = 'base-home';
+                let isMenuOpen = false;
+
+                function openMenu() {
+                    if (isMenuOpen) return;
+
+                    const menuPanel = document.getElementById('menuPanel');
+                    const contentWrapper = document.getElementById('contentWrapper');
+                    const menuOverlay = document.getElementById('menuOverlay');
+
+                    menuPanel.classList.add('open');
+                    contentWrapper.classList.add('shifted');
+                    menuOverlay.classList.add('visible');
+
+                    isMenuOpen = true;
+                    saveState();
+                }
+
+                function closeMenu() {
+                    if (!isMenuOpen) return;
+
+                    const menuPanel = document.getElementById('menuPanel');
+                    const contentWrapper = document.getElementById('contentWrapper');
+                    const menuOverlay = document.getElementById('menuOverlay');
+
+                    menuPanel.classList.remove('open');
+                    contentWrapper.classList.remove('shifted');
+                    menuOverlay.classList.remove('visible');
+
+                    isMenuOpen = false;
+                    saveState();
+                }
+
+                function loadState() {
+                    const savedViewStack = localStorage.getItem('viewStack');
+                    const savedAnimations = localStorage.getItem('viewAnimations');
+                    const savedBase = localStorage.getItem('currentBase');
+                    const savedMenuState = localStorage.getItem('isMenuOpen');
+
+                    if (savedViewStack) {
+                        const views = JSON.parse(savedViewStack);
+                        const animations = savedAnimations ? JSON.parse(savedAnimations) : {};
+
+                        views.forEach(viewId => {
+                            const targetDiv = document.getElementById(viewId);
+                            if (!targetDiv) return;
+
+                            const direction = animations[viewId] || 'right';
+                            viewAnimations[viewId] = direction;
+
+                            // Set position immediately without animation
+                            targetDiv.style.transition = "none";
+                            targetDiv.style.zIndex = currentZIndex++;
+
+                            if (direction === 'bottom') {
+                                targetDiv.style.bottom = "0";
+                                targetDiv.style.top = "auto";
+                                targetDiv.style.transform = "translateY(0)";
+                            } else {
+                                targetDiv.style.left = "0%";
+                                targetDiv.style.top = "0";
+                            }
+
+                            viewStack.push(viewId);
+                        });
+
+                        // Add outside click listener if any bottom views were restored
+                        const hasBottomView = views.some(id => animations[id] === 'bottom');
+                        if (hasBottomView) {
+                            document.addEventListener('click', handleOutsideClick);
+                        }
+
+                        // Re-enable transitions after all views are positioned
+                        setTimeout(() => {
+                            views.forEach(viewId => {
+                                const targetDiv = document.getElementById(viewId);
+                                if (targetDiv) {
+                                    if (viewAnimations[viewId] === 'bottom') {
+                                        targetDiv.style.transition = "transform 0.3s ease-in-out";
+                                    } else {
+                                        targetDiv.style.transition = "left 0.3s ease-in-out";
+                                    }
+                                }
+                            });
+                        }, 50);
+                    }
+
+                    if (savedBase && savedBase !== currentBase) {
+                        const currentBaseDiv = document.getElementById(currentBase);
+                        const newBaseDiv = document.getElementById(savedBase);
+
+                        currentBaseDiv.style.opacity = "0";
+                        currentBaseDiv.style.zIndex = -1;
+                        newBaseDiv.style.opacity = "1";
+                        newBaseDiv.style.zIndex = 0;
+                        currentBase = savedBase;
+                    }
+
+                    if (savedMenuState === 'true') {
+                        const menuPanel = document.getElementById('menuPanel');
+                        const contentWrapper = document.getElementById('contentWrapper');
+                        const menuOverlay = document.getElementById('menuOverlay');
+
+                        menuPanel.classList.add('open');
+                        contentWrapper.classList.add('shifted');
+                        menuOverlay.classList.add('visible');
+                        isMenuOpen = true;
+                    }
+                }
+
+                function saveState() {
+                    localStorage.setItem('viewStack', JSON.stringify(viewStack));
+                    localStorage.setItem('viewAnimations', JSON.stringify(viewAnimations));
+                    localStorage.setItem('currentBase', currentBase);
+                    localStorage.setItem('isMenuOpen', isMenuOpen.toString());
+                }
+
+                function switchBaseView(baseId) {
+                    if (baseId === currentBase) return;
+
+                    const currentBaseDiv = document.getElementById(currentBase);
+                    const newBaseDiv = document.getElementById(baseId);
+                    const backgroundDiv = document.querySelector('.background');
+
+                    currentBaseDiv.style.opacity = "0";
+                    currentBaseDiv.style.zIndex = -1;
+                    backgroundDiv.style.zIndex = -1; // Move background behind new base
+                    setTimeout(() => {
+                        newBaseDiv.style.opacity = "1";
+                        newBaseDiv.style.zIndex = 0;
+                        backgroundDiv.style.zIndex = -1; // Ensure background stays behind new base
+                        currentBase = baseId;
+                        saveState();
+                    }, 300);
+                }
+
+                document.getElementById('hamburgerButton').addEventListener('click', openMenu);
+                document.getElementById('menuOverlay').addEventListener('click', closeMenu);
+
+                document.querySelectorAll('.menu-item').forEach(item => {
+                    item.addEventListener('click', (e) => {
+                        const baseId = e.target.getAttribute('data-base');
+                        if (baseId) {
+                            switchBaseView(baseId);
+                            closeMenu();
+                        }
+                    });
+                });
+
+                window.addEventListener('DOMContentLoaded', loadState);
+            </script>
         </body>
     </html>
-</x-def>
-
-<x-def name:home>
-    <x-use name:app>
-        <x-fill>
-            <h1>home page!</h1>
-        </x-fill>
-    </x-use>
 </x-def>
