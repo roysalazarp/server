@@ -25,10 +25,15 @@
                 * {
                     margin: 0;
                     padding: 0;
+                    box-sizing: border-box;
                 }
 
                 body {
-                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                    background: #fafafa;
+                    color: #171717;
+                    -webkit-font-smoothing: antialiased;
+                    -moz-osx-font-smoothing: grayscale;
                 }
 
                 .background {
@@ -37,7 +42,7 @@
                     left: 0;
                     width: 100vw;
                     height: 100vh;
-                    background-color: white;
+                    background: #fafafa;
                     z-index: -2;
                     transform: translateZ(0);
                 }
@@ -48,11 +53,11 @@
                     left: 0;
                     width: 100vw;
                     height: 100vh;
-                    background-color: rgba(0, 0, 0, 0.3);
+                    background-color: rgba(0, 0, 0, 0.4);
                     z-index: 15;
                     opacity: 0;
                     visibility: hidden;
-                    transition: opacity 0.3s ease-in-out, visibility 0.3s ease-in-out;
+                    transition: opacity 0.2s ease, visibility 0.2s ease;
                 }
 
                 .menu-overlay.visible {
@@ -64,42 +69,58 @@
                     position: fixed;
                     top: 0;
                     left: 0;
-                    width: 75vw;
+                    width: 280px;
+                    max-width: 80vw;
                     height: 100vh;
-                    background-color: white;
+                    background: #ffffff;
                     z-index: 20;
                     transform: translateX(-100%);
-                    transition: transform 0.3s ease-in-out;
-                    box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
-                    padding: 2rem 1.5rem;
+                    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
                     box-sizing: border-box;
+                    border-right: 1px solid #e5e5e5;
                 }
 
                 .menu-panel.open {
                     transform: translateX(0);
                 }
 
-                .menu-item {
-                    display: block;
-                    padding: 1.5rem 0;
-                    font-size: 1.2rem;
-                    color: #333;
-                    text-decoration: none;
+                .menu-header {
+                    padding: 1.5rem 1.25rem;
                     border-bottom: 1px solid #f0f0f0;
+                }
+
+                .menu-logo {
+                    font-size: 1.125rem;
+                    font-weight: 600;
+                    color: #171717;
+                    letter-spacing: -0.02em;
+                }
+
+                .menu-items {
+                    padding: 0.5rem 0;
+                }
+
+                .menu-item {
+                    display: flex;
+                    align-items: center;
+                    padding: 0.625rem 1.25rem;
+                    font-size: 0.9375rem;
+                    font-weight: 400;
+                    color: #737373;
+                    text-decoration: none;
                     cursor: pointer;
                     background: none;
                     border: none;
                     width: 100%;
                     text-align: left;
                     font-family: inherit;
-                }
-
-                .menu-item:last-child {
-                    border-bottom: none;
+                    transition: color 0.15s ease, background-color 0.15s ease;
+                    letter-spacing: -0.01em;
                 }
 
                 .menu-item:hover {
-                    background-color: #f8f9fa;
+                    background-color: #fafafa;
+                    color: #171717;
                 }
 
                 .content-wrapper {
@@ -108,27 +129,36 @@
                     left: 0;
                     width: 100vw;
                     height: 100vh;
-                    transition: transform 0.3s ease-in-out;
+                    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
                     z-index: 1;
                 }
 
                 .content-wrapper.shifted {
-                    transform: translateX(75vw);
+                    transform: translateX(280px);
                 }
 
-                .top-header {
+                .nav {
                     position: fixed;
                     top: 0;
                     left: 0;
+                    right: 0;
                     width: 100vw;
-                    height: 80px;
+                    height: 56px;
                     display: flex;
                     justify-content: space-between;
                     align-items: center;
                     padding: 0 1rem;
                     z-index: 10;
-                    transition: transform 0.3s ease-in-out;
+                    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
                     box-sizing: border-box;
+                    background: rgba(255, 255, 255, 0.8);
+                    backdrop-filter: saturate(180%) blur(20px);
+                    -webkit-backdrop-filter: saturate(180%) blur(20px);
+                    border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+                }
+
+                .nav.hidden {
+                    transform: translateY(-100%);
                 }
 
                 .hamburger-button {
@@ -136,16 +166,49 @@
                     border: none;
                     cursor: pointer;
                     padding: 8px;
-                    border-radius: 12px;
-                    background-color: #E8F2FF;
+                    border-radius: 8px;
                     display: flex;
                     align-items: center;
                     justify-content: center;
+                    transition: background-color 0.15s ease;
+                }
+
+                .hamburger-button:hover {
+                    background-color: #f5f5f5;
+                }
+
+                .hamburger-button:active {
+                    background-color: #e5e5e5;
+                }
+
+                .right-icons {
+                    display: flex;
+                    gap: 0.5rem;
+                    align-items: center;
+                }
+
+                .icon-button {
+                    background: none;
+                    border: none;
+                    cursor: pointer;
+                    padding: 8px;
+                    border-radius: 8px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    transition: background-color 0.15s ease;
+                }
+
+                .icon-button:hover {
+                    background-color: #f5f5f5;
+                }
+
+                .icon-button:active {
+                    background-color: #e5e5e5;
                 }
 
                 .base {
-                    margin-top: 80px;
-                    background-color: white;
+                    background: #fafafa;
                     position: fixed;
                     top: 0;
                     left: 0;
@@ -153,15 +216,89 @@
                     height: 100vh;
                     z-index: -1;
                     transform: translateZ(0);
+                    padding: 2rem 1rem;
                     padding-bottom: 60px;
                     box-sizing: border-box;
                     opacity: 0;
-                    transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out;
+                    transition: opacity 0.2s ease, transform 0.2s ease;
+                    overflow-y: auto;
                 }
 
                 #base-home {
                     z-index: 0;
                     opacity: 1;
+                }
+
+                .base h1 {
+                    padding-top: 56px;
+                    font-size: 2rem;
+                    font-weight: 600;
+                    margin-bottom: 0.5rem;
+                    color: #171717;
+                    letter-spacing: -0.03em;
+                }
+
+                .base-subtitle {
+                    font-size: 1rem;
+                    color: #737373;
+                    margin-bottom: 2rem;
+                    font-weight: 400;
+                }
+
+                .content-card {
+                    background: #ffffff;
+                    border-radius: 12px;
+                    padding: 1.25rem;
+                    margin-bottom: 0.75rem;
+                    border: 1px solid #e5e5e5;
+                    transition: border-color 0.15s ease;
+                }
+
+                .content-card:hover {
+                    border-color: #d4d4d4;
+                }
+
+                .card-title {
+                    font-size: 0.9375rem;
+                    font-weight: 500;
+                    color: #171717;
+                    margin-bottom: 0.375rem;
+                    letter-spacing: -0.01em;
+                }
+
+                .card-text {
+                    font-size: 0.875rem;
+                    line-height: 1.5;
+                    color: #737373;
+                    font-weight: 400;
+                }
+
+                /* Custom scrollbar */
+                .base::-webkit-scrollbar {
+                    width: 6px;
+                }
+
+                .base::-webkit-scrollbar-track {
+                    background: transparent;
+                }
+
+                .base::-webkit-scrollbar-thumb {
+                    background: #d4d4d4;
+                    border-radius: 3px;
+                }
+
+                .base::-webkit-scrollbar-thumb:hover {
+                    background: #a3a3a3;
+                }
+
+                @media (min-width: 768px) {
+                    .base {
+                        padding: 3rem 2rem;
+                    }
+
+                    .base h1 {
+                        font-size: 2.5rem;
+                    }
                 }
             </style>
         </head>
@@ -170,34 +307,148 @@
             <div class="menu-overlay" id="menuOverlay"></div>
 
             <div class="menu-panel" id="menuPanel">
-                <button class="menu-item" data-base="base-home">Home</button>
-                <button class="menu-item" data-base="base-search">Search</button>
-                <button class="menu-item" data-base="base-settings">Settings</button>
+                <div class="menu-header">
+                    <div class="menu-logo">Tila Storage</div>
+                </div>
+                <div class="menu-items">
+                    <button class="menu-item" data-base="base-home">Home</button>
+                    <button class="menu-item" data-base="base-search">Search</button>
+                    <button class="menu-item" data-base="base-settings">Settings</button>
+                </div>
             </div>
 
             <div class="content-wrapper" id="contentWrapper">
-                <div class="top-header">
+                <nav id="navbar" class="nav">
                     <button class="hamburger-button" id="hamburgerButton">
-                        <svg width="24" height="13" viewBox="0 0 24 13" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M2 2H22M2 11H22" stroke="#0062FF" stroke-width="2.5" stroke-linecap="round"
-                                stroke-linejoin="round" />
+                        <svg width="20" height="14" viewBox="0 0 20 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M1 1H19M1 7H19M1 13H19" stroke="#171717" stroke-width="1.5" stroke-linecap="round"/>
                         </svg>
                     </button>
-                </div>
+                    <div class="right-icons">
+                        <button class="icon-button">
+                            <svg width="20" height="24" viewBox="0 0 22 26" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path
+                                    d="M18.2144 25.5L18.2144 21.7661C20.3091 21.3107 21.8573 19.4893 21.8573 17.3036C21.8573 15.1179 20.3091 13.2964 18.2144 12.8411L18.2144 -1.59234e-07L16.393 -2.38851e-07L16.393 12.8411C14.2984 13.2964 12.7502 15.1179 12.7502 17.3036C12.7502 19.4893 14.2984 21.3107 16.393 21.7661L16.393 25.5L18.2144 25.5ZM14.5716 17.3036C14.5716 15.7554 15.7555 14.5714 17.3037 14.5714C18.8519 14.5714 20.0359 15.7554 20.0359 17.3036C20.0359 18.8518 18.8519 20.0357 17.3037 20.0357C15.7555 20.0357 14.5716 18.8518 14.5716 17.3036Z"
+                                    fill="#171717" />
+                                <path
+                                    d="M3.64301 -2.38852e-07L3.64301 3.73393C1.54837 4.18929 0.000157094 6.01071 0.000156998 8.19643C0.000156902 10.3821 1.54837 12.2036 3.64301 12.6589L3.64301 25.5L5.46444 25.5L5.46444 12.6589C7.55908 12.2036 9.1073 10.3821 9.1073 8.19643C9.1073 6.01071 7.55909 4.18929 5.46444 3.73393L5.46444 -1.59234e-07L3.64301 -2.38852e-07ZM7.28587 8.19643C7.28587 9.74464 6.10194 10.9286 4.55373 10.9286C3.00551 10.9286 1.82159 9.74464 1.82159 8.19643C1.82159 6.64821 3.00551 5.46429 4.55373 5.46429C6.10194 5.46429 7.28587 6.64821 7.28587 8.19643Z"
+                                    fill="#171717" />
+                            </svg>
+                        </button>
+
+                        <button class="icon-button">
+                            <svg width="20" height="20" viewBox="0 0 23 23" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path
+                                    d="M15.7433 15.7601L21.3333 21.3333M18.1111 10.0556C18.1111 14.5045 14.5045 18.1111 10.0556 18.1111C5.60659 18.1111 2 14.5045 2 10.0556C2 5.60659 5.60659 2 10.0556 2C14.5045 2 18.1111 5.60659 18.1111 10.0556Z"
+                                    stroke="#171717" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+                            </svg>
+                        </button>
+                    </div>
+                </nav>
 
                 <div id="base-home" class="base">
-                    <h1>Home View</h1>
-                    <p>This is the home base view.</p>
+                    <h1>Home</h1>
+                    <p class="base-subtitle">Your personal storage space</p>
+                    
+                    <div class="content-card">
+                        <div class="card-title">Quick Access</div>
+                        <div class="card-text">Recently viewed items and favorites are just a tap away.</div>
+                    </div>
+                    
+                    <div class="content-card">
+                        <div class="card-title">Secure & Private</div>
+                        <div class="card-text">Your data is encrypted and protected with industry-leading security.</div>
+                    </div>
+                    
+                    <div class="content-card">
+                        <div class="card-title">Cloud Sync</div>
+                        <div class="card-text">Access your files from anywhere, on any device.</div>
+                    </div>
+                    
+                    <div class="content-card">
+                        <div class="card-title">Cloud Sync</div>
+                        <div class="card-text">Access your files from anywhere, on any device.</div>
+                    </div>
+                    
+                    <div class="content-card">
+                        <div class="card-title">Cloud Sync</div>
+                        <div class="card-text">Access your files from anywhere, on any device.</div>
+                    </div>
+                    
+                    <div class="content-card">
+                        <div class="card-title">Cloud Sync</div>
+                        <div class="card-text">Access your files from anywhere, on any device.</div>
+                    </div>
+                    
+                    <div class="content-card">
+                        <div class="card-title">Cloud Sync</div>
+                        <div class="card-text">Access your files from anywhere, on any device.</div>
+                    </div>
+                    
+                    <div class="content-card">
+                        <div class="card-title">Cloud Sync</div>
+                        <div class="card-text">Access your files from anywhere, on any device.</div>
+                    </div>
+                    
+                    <div class="content-card">
+                        <div class="card-title">Cloud Sync</div>
+                        <div class="card-text">Access your files from anywhere, on any device.</div>
+                    </div>
+                    
+                    <div class="content-card">
+                        <div class="card-title">Cloud Sync</div>
+                        <div class="card-text">Access your files from anywhere, on any device.</div>
+                    </div>
+                    
+                    <div class="content-card">
+                        <div class="card-title">Cloud Sync</div>
+                        <div class="card-text">Access your files from anywhere, on any device.</div>
+                    </div>
+                    
+                    <div class="content-card">
+                        <div class="card-title">Cloud Sync</div>
+                        <div class="card-text">Access your files from anywhere, on any device.</div>
+                    </div>
+                    
+                    <div class="content-card">
+                        <div class="card-title">Cloud Sync</div>
+                        <div class="card-text">Access your files from anywhere, on any device.</div>
+                    </div>
+                    
+                    <div class="content-card">
+                        <div class="card-title">Cloud Sync</div>
+                        <div class="card-text">Access your files from anywhere, on any device.</div>
+                    </div>
+                    
+                    <div class="content-card">
+                        <div class="card-title">Cloud Sync</div>
+                        <div class="card-text">Access your files from anywhere, on any device.</div>
+                    </div>
+                    
+                    <div class="content-card">
+                        <div class="card-title">Cloud Sync</div>
+                        <div class="card-text">Access your files from anywhere, on any device.</div>
+                    </div>
                 </div>
 
                 <div id="base-search" class="base">
-                    <h1>Search View</h1>
-                    <p>This is the search base view.</p>
+                    <h1>Search</h1>
+                    <p class="base-subtitle">Find anything instantly</p>
+                    
+                    <div class="content-card">
+                        <div class="card-title">Advanced Filters</div>
+                        <div class="card-text">Search across all your files, folders, and content with powerful filters.</div>
+                    </div>
                 </div>
 
                 <div id="base-settings" class="base">
-                    <h1>Settings View</h1>
-                    <p>This is the settings base view.</p>
+                    <h1>Settings</h1>
+                    <p class="base-subtitle">Customize your experience</p>
+                    
+                    <div class="content-card">
+                        <div class="card-title">Preferences</div>
+                        <div class="card-text">Adjust preferences, manage storage, and configure your account.</div>
+                    </div>
                 </div>
             </div>
             <script>
@@ -330,11 +581,11 @@
 
                     currentBaseDiv.style.opacity = "0";
                     currentBaseDiv.style.zIndex = -1;
-                    backgroundDiv.style.zIndex = -1; // Move background behind new base
+                    backgroundDiv.style.zIndex = -1;
                     setTimeout(() => {
                         newBaseDiv.style.opacity = "1";
                         newBaseDiv.style.zIndex = 0;
-                        backgroundDiv.style.zIndex = -1; // Ensure background stays behind new base
+                        backgroundDiv.style.zIndex = -1;
                         currentBase = baseId;
                         saveState();
                     }, 300);
@@ -351,6 +602,38 @@
                             closeMenu();
                         }
                     });
+                });
+
+                let lastScrollTop = 0;
+                let scrollThreshold = 10;
+                const navbar = document.getElementById('navbar');
+
+                document.querySelectorAll('.base').forEach(base => {
+                  base.addEventListener('scroll', function () {
+                    let currentScroll = base.scrollTop;
+                    if (currentScroll <= 0) {
+                      navbar.classList.remove('hidden');
+                      return;
+                    }
+
+                    if (Math.abs(lastScrollTop - currentScroll) <= scrollThreshold) {
+                      return;
+                    }
+
+                    if (currentScroll > lastScrollTop) {
+                      navbar.classList.add('hidden');
+                    } else {
+                      navbar.classList.remove('hidden');
+                    }
+
+                    lastScrollTop = currentScroll;
+                  });
+                });
+                
+                document.addEventListener('mousemove', function (e) {
+                    if (e.clientY < 100) {
+                        navbar.classList.remove('hidden');
+                    }
                 });
 
                 window.addEventListener('DOMContentLoaded', loadState);
