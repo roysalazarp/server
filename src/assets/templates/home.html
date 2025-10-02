@@ -489,6 +489,7 @@
                     const savedBase = localStorage.getItem('currentBase') || 'base-home';
                     const savedMenuState = localStorage.getItem('isMenuOpen');
 
+                    // Show the correct base immediately
                     const baseToShow = document.getElementById(savedBase);
                     if (baseToShow) {
                         baseToShow.style.opacity = "1";
@@ -544,16 +545,25 @@
                         }, 50);
                     }
 
-
                     if (savedMenuState === 'true') {
                         const menuPanel = document.getElementById('menuPanel');
                         const contentWrapper = document.getElementById('contentWrapper');
                         const menuOverlay = document.getElementById('menuOverlay');
 
+                        // Disable transitions temporarily
+                        menuPanel.style.transition = 'none';
+                        contentWrapper.style.transition = 'none';
+                        
                         menuPanel.classList.add('open');
                         contentWrapper.classList.add('shifted');
                         menuOverlay.classList.add('visible');
                         isMenuOpen = true;
+                        
+                        // Re-enable transitions after a brief moment
+                        setTimeout(() => {
+                            menuPanel.style.transition = '';
+                            contentWrapper.style.transition = '';
+                        }, 50);
                     }
                 }
 
