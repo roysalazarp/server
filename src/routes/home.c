@@ -20,8 +20,8 @@ void home(void *v) {
     uint32_t component_length = strlen(component);
     assert(component_length);
 
-    char response[KB(35)];
-    bzero(response, KB(35));
+    char response[KB(30)];
+    bzero(response, KB(30));
     sprintf(response,
         "HTTP/1.1 200 OK\r\n"
         "Content-Length: %d\r\n"

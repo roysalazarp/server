@@ -343,8 +343,8 @@ void public(void *v) {
     char *asset_type = NULL;
     file_content_type(err, &asset_type, asset_name, strlen(asset_name));
     
-    char response[KB(12)];
-    bzero(response, KB(12));
+    char response[KB(2)];
+    bzero(response, KB(2));
     sprintf(response,
         "HTTP/1.1 200 OK\r\n"
         "Content-Length: %d\r\n"
@@ -440,9 +440,9 @@ void handler(void *arg) {
         }
 
         if (UrlStartsWith("/public")) {
-            ark_task_create(public, &rctx, KB(20));
+            ark_task_create(public, &rctx, KB(6));
         } else if (GET("/")) {
-            ark_task_create(home, &rctx, KB(45));
+            ark_task_create(home, &rctx, KB(40));
         // } else if (GET("/test")) {
         //     ark_task_create(test, &rctx, KB(20));
         // } else if (GET("/login")) {
@@ -492,7 +492,14 @@ int main() {
     uint32_t num_of_filepaths = 0;
     ark_count_files(&num_of_filepaths, MYDIR); /* We'll need this later for memory allocation */
     
-    uint64_t mem_size = PAGE_SIZE * 30;
+    uint64_t persisted_mem_size = PAGE_SIZE * 15;
+    void *persisted_mem = mmap(NULL, (size_t)persisted_mem_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    ARK_ASSERT(persisted_mem != MAP_FAILED, 1, "mmap failed for size %d", (int)persisted_mem_size);
+    
+    Memory persisted_memory = {0};
+    memory_init(&persisted_memory, persisted_mem, persisted_mem_size);
+    
+    uint64_t mem_size = PAGE_SIZE * 18;
     void *mem = mmap(NULL, (size_t)mem_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     ARK_ASSERT(mem != MAP_FAILED, 1, "mmap failed for size %d", (int)mem_size);
     
@@ -551,8 +558,8 @@ int main() {
 
     public_arr_length = count_public_files;
 
-    memory_alloc((void **)&public_name_arr, &memory, public_arr_length * sizeof(char *));
-    memory_alloc((void **)&public_content_arr, &memory, public_arr_length * sizeof(char *));
+    memory_alloc((void **)&public_name_arr, &persisted_memory, public_arr_length * sizeof(char *));
+    memory_alloc((void **)&public_content_arr, &persisted_memory, public_arr_length * sizeof(char *));
 
     uint32_t j = 0;
     for (i = 0; i < num_of_filepaths; i++) {
@@ -563,10 +570,10 @@ int main() {
         char *file_path = array_of_filepaths[i];
         char *file_content = array_of_file_contents[i];
 
-        memory_alloc((void **)&public_name_arr[j], &memory, strlen(file_path) + 1);
+        memory_alloc((void **)&public_name_arr[j], &persisted_memory, strlen(file_path) + 1);
         memcpy(public_name_arr[j], file_path, strlen(file_path));
         
-        memory_alloc((void **)&public_content_arr[j], &memory, strlen(file_content) + 1);
+        memory_alloc((void **)&public_content_arr[j], &persisted_memory, strlen(file_content) + 1);
         memcpy(public_content_arr[j], file_content, strlen(file_content));
 
         j++;
@@ -583,12 +590,12 @@ int main() {
 
     ark_get_templates_info(names_lengths, templates_lengths, component_arr_length, html_file_mask, array_of_filepaths, array_of_file_contents, num_of_filepaths);
     
-    memory_alloc((void **)&component_name_arr, &memory, component_arr_length * sizeof(char *));
+    memory_alloc((void **)&component_name_arr, &persisted_memory, component_arr_length * sizeof(char *));
     
     char **template_content_array = NULL;
     memory_alloc((void **)&template_content_array, &memory, component_arr_length * sizeof(char *));
     for (i = 0; i < component_arr_length; i++) {
-        memory_alloc((void **)&component_name_arr[i], &memory, names_lengths[i] + 1);
+        memory_alloc((void **)&component_name_arr[i], &persisted_memory, names_lengths[i] + 1);
         memory_alloc((void **)&template_content_array[i], &memory, templates_lengths[i] + 1);
     }
 
@@ -599,12 +606,15 @@ int main() {
     
     ark_get_compile_templates_lengths(compiled_templates_lengths, component_name_arr, template_content_array, component_arr_length);
     
-    memory_alloc((void **)&component_content_arr, &memory, component_arr_length * sizeof(char *));
+    memory_alloc((void **)&component_content_arr, &persisted_memory, component_arr_length * sizeof(char *));
     for (i = 0; i < component_arr_length; i++) {
-        memory_alloc((void **)&component_content_arr[i], &memory, compiled_templates_lengths[i] + 1);
+        memory_alloc((void **)&component_content_arr[i], &persisted_memory, compiled_templates_lengths[i] + 1);
     }
     
     ark_compile_templates(component_content_arr, component_name_arr, template_content_array, component_arr_length);
+
+    munmap(memory.start, memory.size);
+    memset(&memory, 0, sizeof(Memory));
 
     char db_relpath[] = "./dev.db";
     char db_path[1024];
@@ -657,7 +667,7 @@ int main() {
 
     SSL_CTX_set_options(ctx, SSL_OP_IGNORE_UNEXPECTED_EOF);
 
-    ark_task_create(handler, &fd, KB(12)); /** NOTE: Keep an eye that the stack size does not become a problem */
+    ark_task_create(handler, &fd, KB(10)); /** NOTE: Keep an eye that the stack size does not become a problem */
 	ark_task_run_scheduler();
     
     /** NOTE: Code bellow will never run */
