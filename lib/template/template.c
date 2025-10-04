@@ -1166,7 +1166,7 @@ int compile_template(char *rendering, char **template_name_array, char **templat
 }
 
 int ark_get_compile_templates_lengths(uint32_t *compiled_templates_lengths, char **template_name_array, char **template_content_array, uint32_t template_count) {    
-    uint64_t mem_size = PAGE_SIZE * 5;
+    uint64_t mem_size = PAGE_SIZE * 8;
     void *mem = mmap(NULL, (size_t)mem_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     ARK_ASSERT(mem != MAP_FAILED, 1, "mmap failed for size %d", (int)mem_size);
     

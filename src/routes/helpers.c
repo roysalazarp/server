@@ -24,7 +24,7 @@ int is_authenticated(char *err, int *user_id, RequestCtx *rctx) {
     Memory *memory = rctx->memory;
 
     int n;
-    PROPAGATE_ERR(some_other_func(err, n), "");
+    // PROPAGATE_ERR(some_other_func(err, n), "");
     
     char *cookie = NULL;
     if (HasHeader(kHttpCookie)) {

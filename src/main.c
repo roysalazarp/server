@@ -9,6 +9,7 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <sys/mman.h>
+#include <signal.h>
 
 #include "ark/shared.h"
 #include "ark/server.h"
@@ -20,6 +21,7 @@
 #include "ark/utils.h"
 #include "ark/task.h"
 
+#include "utils.h"
 #include "routes/routes.h"
 #include "parsers/parsers.h"
 #include "globals.h"
@@ -83,6 +85,10 @@ char *error_messages[] = {
     [ERR_MIN_PASSWORD_LENGTH] = "Password should be at least 4 characters",
     [ERR_INVALID_EMAIL] = "Invalid email format",
 };
+
+void sig_handler(int signo) {
+    printf("\nReceived signal\n");
+}
 
 int
 ark_fd_read(SSL *ssl, int fd, void *buf, int n)
@@ -440,9 +446,9 @@ void handler(void *arg) {
         }
 
         if (UrlStartsWith("/public")) {
-            ark_task_create(public, &rctx, KB(6));
+            ark_task_create(public, &rctx, KB(10));
         } else if (GET("/")) {
-            ark_task_create(home, &rctx, KB(40));
+            ark_task_create(home, &rctx, KB(45));
         // } else if (GET("/test")) {
         //     ark_task_create(test, &rctx, KB(20));
         // } else if (GET("/login")) {
@@ -456,7 +462,7 @@ void handler(void *arg) {
         // } else if (POST("/signup/create-account")) {
         //     ark_task_create(signup_create_account, &rctx, KB(15));
         } else {
-            ark_task_create(not_found, &rctx, KB(10));
+            ark_task_create(not_found, &rctx, KB(15));
         }
 
         // if (strncmp(uri, "/a", uri_length) == 0 && uri_length == strlen("/a")) {
@@ -468,6 +474,8 @@ void handler(void *arg) {
         // }
 
     }
+
+    printf("exited router!\n");
 }
 
 int full_path(char *buffer, uint32_t buffer_size, char *relative_path) {
@@ -485,6 +493,8 @@ int full_path(char *buffer, uint32_t buffer_size, char *relative_path) {
 
 int main() {
     setbuf(stdout, NULL);
+
+    signal(SIGINT, sig_handler);
 
     uint32_t i;
     int op_res;
@@ -667,10 +677,10 @@ int main() {
 
     SSL_CTX_set_options(ctx, SSL_OP_IGNORE_UNEXPECTED_EOF);
 
-    ark_task_create(handler, &fd, KB(10)); /** NOTE: Keep an eye that the stack size does not become a problem */
+    ark_task_create(handler, &fd, KB(15)); /** NOTE: Keep an eye that the stack size does not become a problem */
 	ark_task_run_scheduler();
     
-    /** NOTE: Code bellow will never run */
+    printf("close db and ssl cleaup\n");
 
     sqlite3_close(db);
     

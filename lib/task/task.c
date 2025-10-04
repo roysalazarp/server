@@ -232,7 +232,8 @@ ark_task_run_scheduler(void)
 		t = taskrunqueue.head;
 		if(t == nil){
 			fprint(2, "no runnable tasks! %d tasks stalled\n", taskcount);
-			exit(1);
+			return;
+            // exit(1);
 		}
 		deltask(&taskrunqueue, t);
 		t->ready = 0;

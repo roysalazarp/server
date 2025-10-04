@@ -1,5 +1,6 @@
 #include "taskimpl.h"
 #include <fcntl.h>
+#include <stdio.h>
 
 static Tasklist sleeping;
 static int sleepingcounted;
@@ -145,7 +146,9 @@ fdtask(void *v)
 		}
         int nevents;
 		if((nevents = epoll_wait(epfd, events, 1000, ms)) < 0){
-			if(errno == EINTR)
+			printf("signal exiting\n");
+            return;
+            if(errno == EINTR)
 				continue;
 			fprint(2, "epoll: %s\n", strerror(errno));
 			taskexitall(0);
