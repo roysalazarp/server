@@ -5,7 +5,7 @@
             "name": "Debug",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/debug/tilastorage",
+            "program": "${workspaceFolder}/debug/ark",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}/debug/",
